@@ -255,8 +255,6 @@ require_var TF_VAR_jwt_secret
 require_var TF_VAR_cloudflare_tunnel_token
 require_var TF_VAR_cloudflare_tunnel_name
 require_var TF_VAR_cloudflare_tunnel_id
-require_var TF_VAR_origin_cert
-require_var TF_VAR_origin_key
 require_var TF_VAR_DOMAIN
 
 if [[ -z "${SUBSCRIPTION_SUFFIX:-}" ]]; then

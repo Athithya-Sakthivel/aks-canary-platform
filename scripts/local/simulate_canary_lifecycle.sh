@@ -1,11 +1,9 @@
-# prerequesites in kind cluster
-# bash scripts/local/cluster_bootstrap.sh
-# bash scripts/local/setup_charts.sh
+bash scripts/local/cluster_bootstrap.sh
+bash scripts/local/setup_charts.sh
 
 kubectl delete ns task-api --force || true
 
 bash scripts/local/setup_apps.sh
-
 
 bash scripts/local/deploy-postgres.sh
 

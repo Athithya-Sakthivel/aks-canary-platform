@@ -60,6 +60,7 @@ apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
     git \
+    gh \
     gnupg \
     jq \
     lsb-release \
@@ -209,6 +210,7 @@ cd azure-pipelines/tests/playwright
 npm install -D @playwright/test@$PLAYWRIGHT_VERSION
 npx playwright install --with-deps
 cd -
+
 # Verification
 echo "=== Environment Verification ==="
 echo "Java: $(java -version 2>&1 | head -n 1)"
