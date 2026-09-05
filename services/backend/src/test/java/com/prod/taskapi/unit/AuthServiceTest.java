@@ -13,11 +13,12 @@ import com.prod.taskapi.entity.User;
 import com.prod.taskapi.repository.UserRepository;
 import com.prod.taskapi.security.JwtService;
 import com.prod.taskapi.service.AuthService;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -32,7 +33,10 @@ class AuthServiceTest {
 
   @Mock private JwtService jwtService;
 
-  @InjectMocks private AuthService authService;
+  private Counter authSuccessCounter;
+  private Counter authFailureCounter;
+
+  private AuthService authService;
 
   private RegisterRequest registerRequest;
   private LoginRequest loginRequest;
@@ -40,6 +44,14 @@ class AuthServiceTest {
 
   @BeforeEach
   void setUp() {
+    SimpleMeterRegistry registry = new SimpleMeterRegistry();
+    authSuccessCounter = registry.counter("auth_success_total");
+    authFailureCounter = registry.counter("auth_failure_total");
+
+    authService =
+        new AuthService(
+            userRepository, passwordEncoder, jwtService, authSuccessCounter, authFailureCounter);
+
     registerRequest = new RegisterRequest("testuser", "test@example.com", "password123");
     loginRequest = new LoginRequest("testuser", "password123");
     user = new User("testuser", "test@example.com", "hashedPassword", Role.USER);

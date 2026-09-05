@@ -11,12 +11,13 @@ import com.prod.taskapi.entity.Status;
 import com.prod.taskapi.entity.Task;
 import com.prod.taskapi.repository.TaskRepository;
 import com.prod.taskapi.service.TaskService;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Timer;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -25,13 +26,34 @@ class TaskServiceTest {
 
   @Mock private TaskRepository taskRepository;
 
-  @InjectMocks private TaskService taskService;
+  @Mock private Counter taskCreatedCounter;
+
+  @Mock private Timer taskCreationTimer;
+
+  @Mock private Timer taskFetchTimer;
+
+  private TaskService taskService;
 
   private Task task;
   private TaskRequest taskRequest;
 
   @BeforeEach
-  void setUp() {
+  void setUp() throws Exception {
+    // Timer.record(Supplier) returns the supplied object when called.
+    // Mockito cannot directly mock generic Supplier easily, so use real
+    // SimpleMeterRegistry-based timers OR stub with thenAnswer.
+    // Approach: use minimal real Timers backed by SimpleMeterRegistry.
+
+    io.micrometer.core.instrument.simple.SimpleMeterRegistry registry =
+        new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+
+    taskCreatedCounter = registry.counter("task_created_total");
+    taskCreationTimer = registry.timer("task_creation_duration");
+    taskFetchTimer = registry.timer("task_fetch_duration");
+
+    taskService =
+        new TaskService(taskRepository, taskCreatedCounter, taskCreationTimer, taskFetchTimer);
+
     task = new Task("Test Task", "Description", Status.PENDING, 1L);
     task.setId(1L);
     taskRequest = new TaskRequest("Test Task", "Description", Status.PENDING);

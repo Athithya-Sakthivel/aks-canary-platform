@@ -38,6 +38,9 @@
 
         <!-- Matches the Mockito version managed by Spring Boot 3.5.16. -->
         <mockito.version>5.17.0</mockito.version>
+
+        <!-- Dependency plugin resolves mockito-core for Surefire javaagent. -->
+        <maven-dependency-plugin.version>3.8.1</maven-dependency-plugin.version>
     </properties>
 
     <dependencyManagement>
@@ -73,13 +76,6 @@
                 <version>${testcontainers.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
-            </dependency>
-
-            <!-- Explicit Mockito version used by the Surefire javaagent. -->
-            <dependency>
-                <groupId>org.mockito</groupId>
-                <artifactId>mockito-core</artifactId>
-                <version>${mockito.version}</version>
             </dependency>
 
             <!-- PostgreSQL JDBC -->
@@ -179,7 +175,7 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- Explicit Mockito dependency for the Surefire javaagent. -->
+        <!-- Mockito -->
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
@@ -235,19 +231,31 @@
             </plugin>
 
             <!--
-                Configure Mockito as a JVM javaagent for tests.
+                Resolve mockito-core as a Maven artifact so Surefire can
+                pass the resolved JAR path as a Java agent.
 
-                Mockito is declared explicitly above at the same version,
-                so the configured agent path resolves to the test dependency.
+                This avoids hard-coding ${settings.localRepository}, which
+                breaks when CI uses a different Maven local repository path.
             -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <version>${maven-dependency-plugin.version}</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>properties</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Run tests with Mockito attached as an explicit Java agent. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <argLine>
-                        -javaagent:${settings.localRepository}/org/mockito/mockito-core/${mockito.version}/mockito-core-${mockito.version}.jar
-                        -XX:+EnableDynamicAgentLoading
-                    </argLine>
+                    <argLine>-javaagent:${org.mockito:mockito-core:jar}</argLine>
                 </configuration>
             </plugin>
 
