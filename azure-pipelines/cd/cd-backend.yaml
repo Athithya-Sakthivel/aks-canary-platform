@@ -1,3 +1,13 @@
+# ---------------------------------------------------------------------------
+# CD — Backend
+#
+# Trigger: automatic on successful `ci-backend` run on main.
+# Uses pipeline resource `ciBackend.sourceCommit` for exact source checkout.
+# Builds, scans (Trivy CRITICAL), pushes to ACR, canary deploys via
+# `backend-deploy.sh` using Argo Rollouts + k6.
+# No CI artifact handoff; image tag = sourceCommit SHA.
+# ---------------------------------------------------------------------------
+
 trigger: none
 
 resources:
@@ -12,32 +22,19 @@ resources:
 variables:
   - group: terraform-vars
   - name: backendNamespace
-    value: "default"
-  - name: backendManifests
-    value: |
-      services/backend/k8s/deployment.yaml
-      services/backend/k8s/service.yaml
-  - name: backendDeploymentManifest
-    value: "services/backend/k8s/deployment.yaml"
-  - name: backendContainerName
-    value: "backend"
-  - name: canaryTrafficSplitMethod
-    value: "pod"
-  - name: k6Endpoint
-    value: "/actuator/health/readiness"
+    value: "task-api"
+  - name: argoRolloutsVersion
+    value: "1.8.4"
+  - name: k6Version
+    value: "2.1.0"
 
 pool:
   vmImage: "ubuntu-24.04"
 
-workspace:
-  clean: all
-
 stages:
   - stage: build
     displayName: "Build, scan and push backend image"
-    condition: and(
-      succeeded(),
-      eq(variables['resources.pipeline.ciBackend.sourceBranch'], 'refs/heads/main'))
+    condition: and(succeeded(), eq(variables['resources.pipeline.ciBackend.sourceBranch'], 'refs/heads/main'))
     jobs:
       - job: build_push
         displayName: "Build / Trivy scan / push"
@@ -45,6 +42,7 @@ stages:
           - checkout: self
             clean: true
             fetchDepth: 1
+            fetchTags: false
             persistCredentials: false
             submodules: false
             lfs: false
@@ -52,9 +50,10 @@ stages:
           - bash: |
               set -euo pipefail
 
-              commit='$(resources.pipeline.ciBackend.sourceCommit)'
+              commit="$(resources.pipeline.ciBackend.sourceCommit)"
 
               test -n "$commit"
+              [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
 
               git -c "http.extraheader=AUTHORIZATION: bearer $SYSTEM_ACCESSTOKEN" \
                 fetch --no-tags --depth=1 origin "$commit"
@@ -66,28 +65,12 @@ stages:
             env:
               SYSTEM_ACCESSTOKEN: "$(System.AccessToken)"
 
-          - download: ciBackend
-            artifact: ci-attestation
-
-          - bash: |
-              set -euo pipefail
-
-              expected='$(resources.pipeline.ciBackend.sourceCommit)'
-              attested="$(tr -d '\r\n' < '$(Pipeline.Workspace)/ciBackend/ci-attestation/source-commit.txt')"
-              run_id="$(tr -d '\r\n' < '$(Pipeline.Workspace)/ciBackend/ci-attestation/pipeline-run-id.txt')"
-
-              test "$attested" = "$expected"
-              test "$run_id" = "$(resources.pipeline.ciBackend.runID)"
-            displayName: "Verify CI attestation"
-
           - template: azure-pipelines/templates/docker-build-push.yaml
             parameters:
               dockerfilePath: "services/backend/Dockerfile"
               contextPath: "services/backend"
               imageRepository: "backend"
               imageTag: "$(resources.pipeline.ciBackend.sourceCommit)"
-              sourceCommit: "$(resources.pipeline.ciBackend.sourceCommit)"
-              sourcePipelineRunId: "$(resources.pipeline.ciBackend.runID)"
               containerRegistry: "$(containerRegistry)"
               azureSubscription: "azdo-oidc-cd"
 
@@ -99,17 +82,14 @@ stages:
       - deployment: canary_deploy
         displayName: "Progressive backend canary"
         environment: "staging"
-        workspace:
-          clean: all
         strategy:
           runOnce:
             deploy:
               steps:
-                - download: none
-
                 - checkout: self
                   clean: true
                   fetchDepth: 1
+                  fetchTags: false
                   persistCredentials: false
                   submodules: false
                   lfs: false
@@ -117,9 +97,10 @@ stages:
                 - bash: |
                     set -euo pipefail
 
-                    commit='$(resources.pipeline.ciBackend.sourceCommit)'
+                    commit="$(resources.pipeline.ciBackend.sourceCommit)"
 
                     test -n "$commit"
+                    [[ "$commit" =~ ^[0-9a-f]{40}$ ]]
 
                     git -c "http.extraheader=AUTHORIZATION: bearer $SYSTEM_ACCESSTOKEN" \
                       fetch --no-tags --depth=1 origin "$commit"
@@ -131,54 +112,145 @@ stages:
                   env:
                     SYSTEM_ACCESSTOKEN: "$(System.AccessToken)"
 
-                - download: current
-                  artifact: image-metadata
+                - bash: |
+                    set -euo pipefail
+
+                    version="$(argoRolloutsVersion)"
+                    work="$(Agent.TempDirectory)/argo-rollouts"
+                    archive="kubectl-argo-rollouts-linux-amd64"
+                    checksums="argo-rollouts-checksums.txt"
+                    base_url="https://github.com/argoproj/argo-rollouts/releases/download/v${version}"
+
+                    mkdir -p "$work"
+
+                    curl \
+                      --fail \
+                      --silent \
+                      --show-error \
+                      --location \
+                      --retry 3 \
+                      --retry-all-errors \
+                      --connect-timeout 10 \
+                      --proto '=https' \
+                      --tlsv1.2 \
+                      -o "$work/$archive" \
+                      "$base_url/$archive"
+
+                    curl \
+                      --fail \
+                      --silent \
+                      --show-error \
+                      --location \
+                      --retry 3 \
+                      --retry-all-errors \
+                      --connect-timeout 10 \
+                      --proto '=https' \
+                      --tlsv1.2 \
+                      -o "$work/$checksums" \
+                      "$base_url/$checksums"
+
+                    cd "$work"
+
+                    checksum_line="$(
+                      grep -E \
+                        '^[0-9a-f]{64}[[:space:]]+[*]?kubectl-argo-rollouts-linux-amd64$' \
+                        "$checksums"
+                    )"
+
+                    test -n "$checksum_line"
+
+                    printf '%s\n' "$checksum_line" | sha256sum --check --status -
+
+                    chmod +x "$archive"
+                    sudo install -m 0755 "$archive" /usr/local/bin/kubectl-argo-rollouts
+
+                    kubectl argo rollouts version
+                  displayName: "Install pinned Argo Rollouts plugin"
 
                 - bash: |
                     set -euo pipefail
 
-                    metadata='$(Pipeline.Workspace)/image-metadata/image.json'
-                    expected_commit='$(resources.pipeline.ciBackend.sourceCommit)'
-                    expected_run_id='$(resources.pipeline.ciBackend.runID)'
-                    expected_repository='backend'
-                    expected_registry='$(containerRegistry)'
+                    version="$(k6Version)"
+                    work="$(Agent.TempDirectory)/k6"
+                    archive="k6-v${version}-linux-amd64.tar.gz"
+                    checksums="k6-v${version}-checksums.txt"
+                    base_url="https://github.com/grafana/k6/releases/download/v${version}"
 
-                    test -s "$metadata"
+                    mkdir -p "$work"
 
-                    source_commit="$(jq -er '.sourceCommit' "$metadata")"
-                    source_run_id="$(jq -er '.sourcePipelineRunId' "$metadata")"
-                    repository="$(jq -er '.repository' "$metadata")"
-                    registry="$(jq -er '.registry' "$metadata")"
-                    tag="$(jq -er '.tag' "$metadata")"
-                    digest="$(jq -er '.digest' "$metadata")"
+                    curl \
+                      --fail \
+                      --silent \
+                      --show-error \
+                      --location \
+                      --retry 3 \
+                      --retry-all-errors \
+                      --connect-timeout 10 \
+                      --proto '=https' \
+                      --tlsv1.2 \
+                      -o "$work/$archive" \
+                      "$base_url/$archive"
 
-                    test "$source_commit" = "$expected_commit"
-                    test "$source_run_id" = "$expected_run_id"
-                    test "$repository" = "$expected_repository"
-                    test "$registry" = "$expected_registry"
-                    test "$tag" = "$expected_commit"
-                    [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+                    curl \
+                      --fail \
+                      --silent \
+                      --show-error \
+                      --location \
+                      --retry 3 \
+                      --retry-all-errors \
+                      --connect-timeout 10 \
+                      --proto '=https' \
+                      --tlsv1.2 \
+                      -o "$work/$checksums" \
+                      "$base_url/$checksums"
 
-                    image="${registry}.azurecr.io/${repository}@${digest}"
+                    cd "$work"
 
-                    echo "Using immutable image digest: $image"
-                    echo "##vso[task.setvariable variable=IMAGE_FULL_NAME]$image"
-                  displayName: "Verify image provenance and resolve digest"
+                    checksum_line="$(
+                      grep -E \
+                        '^[0-9a-f]{64}[[:space:]]+[*]?k6-v'"${version}"'-linux-amd64\.tar\.gz$' \
+                        "$checksums"
+                    )"
 
-                - template: azure-pipelines/templates/backend-deploy.yaml
-                  parameters:
-                    imageFullName: "$(IMAGE_FULL_NAME)"
-                    serviceName: "backend"
-                    containerName: "$(backendContainerName)"
-                    namespace: "$(backendNamespace)"
-                    manifests: "$(backendManifests)"
-                    deploymentManifest: "$(backendDeploymentManifest)"
-                    aksClusterName: "$(aksClusterName)"
-                    aksResourceGroup: "$(aksResourceGroup)"
+                    test -n "$checksum_line"
+
+                    printf '%s\n' "$checksum_line" | sha256sum --check --status -
+
+                    tar -xzf "$archive"
+
+                    test -x "$work/k6-v${version}-linux-amd64/k6"
+                    sudo install -m 0755 \
+                      "$work/k6-v${version}-linux-amd64/k6" \
+                      /usr/local/bin/k6
+
+                    k6 version
+                  displayName: "Install pinned k6"
+
+                - task: AzureCLI@2
+                  displayName: "Canary deploy backend"
+                  inputs:
                     azureSubscription: "azdo-oidc-cd"
-                    canaryTrafficSplitMethod: "$(canaryTrafficSplitMethod)"
-                    canaryPercentages:
-                      - 10
-                      - 50
-                    baselineAndCanaryReplicas: 1
-                    k6Script: "azure-pipelines/scripts/k6-load-test.js"
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -euo pipefail
+
+                      az aks get-credentials \
+                        --resource-group "$(aksResourceGroup)" \
+                        --name "$(aksClusterName)" \
+                        --overwrite-existing
+
+                      export NAMESPACE="$(backendNamespace)"
+                      export IMAGE_REPO="$(containerRegistry).azurecr.io/backend"
+                      export K6_BIN="k6"
+
+                      IMAGE="$(containerRegistry).azurecr.io/backend:$(resources.pipeline.ciBackend.sourceCommit)"
+
+                      bash azure-pipelines/scripts/backend-deploy.sh \
+                        --canary \
+                        --image "$IMAGE" \
+                        --qps 2 \
+                        --p95-threshold 20000 \
+                        --error-threshold 0.05 \
+                        --duration 15s \
+                        --observation-duration 15s

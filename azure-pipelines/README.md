@@ -1,17 +1,13 @@
 # Azure Pipelines – Task API CI/CD
 
-Continuous integration and delivery for the **Task API** system.
-Pipelines are organised by service (backend, frontend) and infrastructure (Terraform). Complex deployment logic lives in `scripts/` and is invoked from thin YAML pipelines.
+Continuous integration and delivery for the **Task API** platform.
 
-## Directory structure
+CI validates each service independently. CD builds immutable images, scans them, and deploys to AKS using **Argo Rollouts canary releases** for both backend and frontend. Terraform has a separate plan/apply pipeline.
+
+## Directory layout
 
 ```sh
 azure-pipelines/
-├── scripts/
-│   ├── trivy_report.py          # parse Trivy JSON, fail on HIGH/CRITICAL
-│   ├── push_manifests.py        # create deploy manifest with image digest
-│   ├── frontend-deploy.sh         # canary rollout for backend
-│   └──           # load test script used by canary-deploy
 ├── ci/
 │   ├── ci-backend.yaml
 │   ├── ci-frontend.yaml
@@ -22,128 +18,139 @@ azure-pipelines/
 │   ├── cd-frontend.yaml
 │   └── cd-terraform.yaml
 ├── templates/
-│   ├── docker-build-push.yaml   # Reusable Docker build + Trivy scan + push to ACR
-│   ├── backend-deploy.yaml      # Deploy backend to AKS
-│   └── frontend-deploy.yaml     # Deploy frontend to AKS
+│   └── docker-build-push.yaml
+├── scripts/
+│   ├── backend-deploy.sh
+│   ├── frontend-deploy.sh
+│   └── trivy_report.py
+├── tests/
+│   ├── k6/
+│   │   ├── backend-load.ts
+│   │   └── frontend-load.ts
+│   └── playwright/
+│       ├── playwright.config.ts
+│       └── task-api.spec.ts
 └── README.md
 ```
 
-## Pipeline inventory
+## CI pipelines
 
-### CI pipelines – code validation only (no Docker build, no deployment)
+All CI pipelines run on Microsoft-hosted `ubuntu-24.04` agents. CI does **not** build Docker images or deploy.
 
-| Pipeline                       | Trigger (paths)           | Purpose                                                                                                       |
-| ------------------------------ | ------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `ci-backend.yaml`              | `services/backend/**`     | Maven build, unit tests, integration tests (Testcontainers), static analysis (SpotBugs), package verification |
-| `ci-frontend.yaml`             | `services/frontend/**`    | npm install, TypeScript type check, ESLint, unit tests, production build                                      |
-| `ci-terraform.yaml`            | `infra/terraform/main/**` | `tofu fmt -check`, validate, plan; publishes plan artifact                                                    |
-| `full_repo_security_scan.yaml` | Push to `main` (batched)  | OpenGrep SAST, Gitleaks secrets, Trivy vulnerability scan                                                     |
+| Pipeline                       | Trigger                   | Purpose                                                                                   |
+| ------------------------------ | ------------------------- | ----------------------------------------------------------------------------------------- |
+| `ci-backend.yaml`              | `services/backend/**`     | Maven build, unit tests, Testcontainers integration tests, SpotBugs, package verification |
+| `ci-frontend.yaml`             | `services/frontend/**`    | `npm ci`, TypeScript type check, ESLint, unit tests, production Vite build                |
+| `ci-terraform.yaml`            | `infra/terraform/main/**` | `tofu fmt -check`, `tofu validate`, `tofu plan`, publish plan artifact                    |
+| `full_repo_security_scan.yaml` | Push to `main`            | OpenGrep SAST, Gitleaks secrets, Trivy vulnerability scan                                 |
 
-All CI pipelines run on **Microsoft‑hosted** `ubuntu-24.04` agents.
-The backend CI uses a local PostgreSQL via Testcontainers; no external services required.
+## CD pipelines
 
-### CD pipelines – build, scan, deploy to AKS
+CD runs only after the corresponding CI succeeds on `main`, or manually for Terraform apply.
 
-| Pipeline            | Trigger                         | Purpose                                                                                                            |
-| ------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `cd-backend.yaml`   | `ci-backend` success on `main`  | Build backend Docker image (multi‑stage), scan with Trivy, push to ACR, deploy to AKS using **canary strategy**    |
-| `cd-frontend.yaml`  | `ci-frontend` success on `main` | Build frontend Docker image (multi‑stage with Nginx), scan with Trivy, push to ACR, deploy to AKS (rolling update) |
-| `cd-terraform.yaml` | **Manual only**                 | Apply the exact plan artifact from `ci-terraform`. Fetches `azdo-pat` from Key Vault.                              |
+| Pipeline            | Trigger                         | Purpose                                                                               |
+| ------------------- | ------------------------------- | ------------------------------------------------------------------------------------- |
+| `cd-backend.yaml`   | `ci-backend` success on `main`  | Build backend image, Trivy scan, push to ACR, canary deploy via `backend-deploy.sh`   |
+| `cd-frontend.yaml`  | `ci-frontend` success on `main` | Build frontend image, Trivy scan, push to ACR, canary deploy via `frontend-deploy.sh` |
+| `cd-terraform.yaml` | Manual                          | Apply the exact Terraform plan artifact produced by `ci-terraform`                    |
 
-CD pipelines build images only when the corresponding CI succeeds on `main`.
-Images are tagged with the Git commit SHA, never `latest`.
+Both application CD pipelines use the **Argo Rollouts canary strategy**. The backend and frontend `*-deploy.sh` scripts manage stable and canary rollouts, traffic shifting, k6 load testing, Playwright UI validation, and automatic rollback.
 
-## Templates
+## Environment variables and secrets
 
-| Template                 | Used by                               | Purpose                                                          |
-| ------------------------ | ------------------------------------- | ---------------------------------------------------------------- |
-| `docker-build-push.yaml` | `cd-backend.yaml`, `cd-frontend.yaml` | Build Docker image, Trivy scan, push to Azure Container Registry |
-| `backend-deploy.yaml`    | `cd-backend.yaml`                     | Invoke `canary-deploy.sh` to roll out backend safely             |
-| `frontend-deploy.yaml`   | `cd-frontend.yaml`                    | Apply frontend manifests to AKS (rolling update)                 |
+### Application runtime — Kubernetes Secrets
 
-## Scripts
+The application containers consume these environment variables from Kubernetes Secrets. In AKS, the Secrets are synced from Azure Key Vault by External Secrets Operator.
 
-Scripts under `azure-pipelines/scripts/` are versioned and contain all complex logic.
+#### `backend-secrets` namespace `task-api`
 
-| Script              | Purpose                                                                                                                             |
-| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `trivy_report.py`   | Parse Trivy JSON output and fail the pipeline if any HIGH or CRITICAL vulnerabilities are found                                     |
-| `push_manifests.py` | Query ACR for the image digest and write a `deploy-manifest.json` used by deployment steps                                          |
-| `canary-deploy.sh`  | Perform canary rollout for the backend: create new revision, run load tests, gradually shift traffic, automatic rollback on failure |
-| `k6-load-test.js`   | Load test scenarios used by `canary-deploy.sh`                                                                                      |
+| Environment variable                    | Required | Purpose                                      |
+| --------------------------------------- | -------- | -------------------------------------------- |
+| `DATABASEURL`                           | yes      | PostgreSQL JDBC URL                          |
+| `DATABASEUSERNAME`                      | yes      | PostgreSQL user                              |
+| `DATABASEPASSWORD`                      | yes      | PostgreSQL password                          |
+| `JWTSECRET`                             | yes      | JWT signing key                              |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | yes      | Azure Application Insights connection string |
 
-## Agent pool
+#### `frontend-secrets` namespace `task-api`
 
-All pipelines run on **Microsoft‑hosted** `ubuntu-24.04` agents.
-No private network or self‑hosted infrastructure is required.
+| Environment variable                    | Required | Purpose                                |
+| --------------------------------------- | -------- | -------------------------------------- |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | yes      | Browser Application Insights telemetry |
 
-## Variable groups & secrets
+#### `cloudflared-token` namespace `cloudflared`
 
-### Variable group (non‑secrets)
+| Secret key | Required | Purpose                 |
+| ---------- | -------- | ----------------------- |
+| `token`    | yes      | Cloudflare Tunnel token |
 
-A single variable group **`terraform-vars`** is populated by Terraform (bootstrap) and contains every non‑secret configuration value the pipelines need:
+### Azure Key Vault secrets
 
-- `TF_VAR_location`
-- `TF_VAR_alert_email_address`
-- `TF_VAR_DOMAIN`
-- `AZDO_ORG_SERVICE_URL`
-- `TF_VAR_cloudflare_tunnel_name`
-- `TF_VAR_cloudflare_tunnel_id`
+All secrets are stored in the bootstrap Key Vault (`kv-azdo-bootstrap-<subscription-suffix>`) and fetched at runtime using the `AzureKeyVault@2` task in Azure Pipelines.
 
-Additional values (e.g., ACR name, AKS cluster name, resource group) are either derived from Terraform outputs or set as pipeline variables in the Azure DevOps UI.
+| Key Vault secret name                 | Used by                                                         |
+| ------------------------------------- | --------------------------------------------------------------- |
+| `azdo-pat`                            | Terraform CD pipeline to authenticate the Azure DevOps provider |
+| `DatabaseUrl`                         | ESO → `backend-secrets`                                         |
+| `DatabaseUsername`                    | ESO → `backend-secrets`                                         |
+| `DatabasePassword`                    | ESO → `backend-secrets`                                         |
+| `JwtSecret`                           | ESO → `backend-secrets`                                         |
+| `ApplicationInsightsConnectionString` | ESO → `backend-secrets` and `frontend-secrets`                  |
+| `CloudflareTunnelToken`               | ESO → `cloudflared-token`                                       |
 
-No secrets are stored in variable groups.
+### Azure DevOps variable group — `terraform-vars`
 
-### Secrets
+The `terraform-vars` variable group contains **non-secret** values only. Secrets are not stored in variable groups.
 
-All sensitive values are stored in **Azure Key Vault** (bootstrap Key Vault) and fetched at runtime using the `AzureKeyVault@2` task. The following secrets are used by pipelines:
+| Variable                        | Purpose                                         |
+| ------------------------------- | ----------------------------------------------- |
+| `TF_VAR_location`               | Azure region                                    |
+| `TF_VAR_alert_email_address`    | Azure Monitor alert email                       |
+| `TF_VAR_owner`                  | Owner tag                                       |
+| `TF_VAR_DOMAIN`                 | Public domain for Cloudflare/Tunnel DNS         |
+| `AZDO_ORG_SERVICE_URL`          | Azure DevOps organization URL                   |
+| `TF_VAR_cloudflare_tunnel_name` | Cloudflare Tunnel name                          |
+| `TF_VAR_cloudflare_tunnel_id`   | Cloudflare Tunnel ID (optional, may be derived) |
 
-- `azdo-pat` – required by Terraform CI/CD pipelines for Azure DevOps provider
-- `DatabaseUsername`, `DatabasePassword`, `JwtSecret` – backend deployment (injected into Kubernetes secrets via External Secrets Operator)
-- `CloudflareTunnelToken`, `CloudflareTunnelName`, `CloudflareTunnelId` – cloudflared deployment
-- `OriginCaCert`, `OriginCaKey` – frontend TLS termination
+Environment-specific values live in `.tfvars` files:
 
-Pipelines retrieve secrets from Key Vault and pass them as environment variables or Kubernetes secret manifests; they never appear in logs or pipeline definitions.
+```text
+infra/terraform/main/environments/staging.tfvars
+infra/terraform/main/environments/prod.tfvars
+```
 
-All Azure‑to‑Azure authentication uses **OIDC federation** – no client secrets or connection strings are stored anywhere.
+Those files are not secrets and are not stored in variable groups.
+
+## Authentication model
+
+- **Azure-to-Azure** uses OIDC federation. No client secrets or connection strings are stored in pipeline variables.
+- **Terraform state** is stored in Azure Blob Storage with Azure AD authentication (`storage_use_azuread = true`).
+- **AKS workloads** use Workload Identity for Azure Key Vault and ACR access, not static credentials.
 
 ## Key design decisions
 
-- **Separate CI per service** – backend and frontend are validated independently with path‑specific triggers for fast feedback.
-- **Docker build in CD only** – CI never builds images. CD builds, scans, and deploys.
-- **Canary for backend, rolling for frontend** – backend uses `canary-deploy.sh` (traffic shifting, automatic rollback). Frontend uses a standard `kubectl set image` because it is stateless.
-- **Immutable deployments** – container images tagged with Git commit SHA and pinned by digest in manifests.
-- **Plan‑apply separation** – `ci-terraform` validates and publishes a plan artifact; `cd-terraform` applies that exact artifact with no re‑plan.
-- **Trunk‑based development** – only `main` and short‑lived `feat/*` branches. Environment differences via `.tfvars`.
-- **Secrets in Key Vault, config in variable group** – clear boundary between sensitive and non‑sensitive values.
-- **AKS workload identity** – applications in the cluster authenticate to Azure Key Vault and ACR using workload identity, not static credentials.
+- **CI per service** – independent path filters for fast feedback.
+- **CD builds images** – CI never builds; CD builds, scans, pushes, and deploys.
+- **Canary for both backend and frontend** – Argo Rollouts with Gateway API traffic splitting, k6 load testing, Playwright UI tests, and automatic rollback.
+- **Immutable images** – Git commit SHA tags, pinned by digest.
+- **Plan/apply separation** – `ci-terraform` plans, `cd-terraform` applies.
+- **Secrets in Key Vault, config in variable group** – clear boundary.
+- **External Secrets Operator** – syncs Azure Key Vault secrets into Kubernetes.
+- **No dummy telemetry** – Application Insights connection string is real; missing values disable telemetry instead of pointing at localhost.
 
-## How to run
+## How a deployment works
 
-1. **Push to backend code** → `ci-backend` runs (build, unit/integration tests).
-2. **Push to frontend code** → `ci-frontend` runs (lint, type check, tests, build).
-3. **Push to Terraform code** → `ci-terraform` runs (fmt, validate, plan).
-4. **Merge to `main`** – all affected CI pipelines run again. On success:
-   - Backend CD builds the backend image, pushes to ACR, runs canary deployment.
-   - Frontend CD builds the frontend image, pushes to ACR, deploys to AKS.
-5. **Infrastructure changes** – human manually triggers `cd-terraform`.
-6. **Security scan** – runs automatically on every push to `main`.
-
-## Security scanning
-
-The `full_repo_security_scan.yaml` pipeline runs on every push to `main` and uses:
-
-- **OpenGrep** – SAST (OWASP Top Ten, Docker, secrets).
-- **Gitleaks** – full‑history secrets detection.
-- **Trivy** – filesystem vulnerability and misconfiguration scan (CRITICAL only).
-
-Tool binaries are downloaded with pinned versions and verified at runtime. The scan runs on a clean ephemeral agent with full repository history.
+1. Push to `services/backend/**` → `ci-backend` runs tests.
+2. Push to `services/frontend/**` → `ci-frontend` runs lint/typecheck/build.
+3. Merge to `main` → relevant CD pipeline builds image, scans, pushes, then `backend-deploy.sh` or `frontend-deploy.sh` performs a canary rollout.
+4. Terraform changes are planned automatically and applied manually via `cd-terraform`.
+5. Security scan runs on every push to `main`.
 
 ## Adding a new service
 
-1. Place new code under `services/<new-service>/`.
-2. Create a CI pipeline `ci-<service>.yaml` with path filters.
-3. Create a CD pipeline `cd-<service>.yaml` (reuse `docker-build-push.yaml` and add a deploy template if needed).
-4. Add required variables to `terraform-vars` (via Terraform bootstrap).
-5. Update this README.
-6. Ensure the service follows conventions: environment variables for configuration, no hardcoded secrets, containerised deployment.
+1. Add code under `services/<new-service>/`.
+2. Create `ci-<service>.yaml` and `cd-<service>.yaml`.
+3. Reuse `docker-build-push.yaml`.
+4. Add required variables to `terraform-vars` via Terraform bootstrap.
+5. Add required Key Vault secrets and ESO `ExternalSecret` entries if needed.
+6. Update this README.

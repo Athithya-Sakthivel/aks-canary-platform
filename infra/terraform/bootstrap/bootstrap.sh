@@ -44,6 +44,9 @@ export TZ="Asia/Kolkata"
 export TF_IN_AUTOMATION="true"
 export TF_INPUT="false"
 
+export TF_VAR_subscription_id="$AZURE_SUBSCRIPTION_ID"
+export TF_VAR_environment="${TF_VAR_environment:-staging}"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd -P)"
 

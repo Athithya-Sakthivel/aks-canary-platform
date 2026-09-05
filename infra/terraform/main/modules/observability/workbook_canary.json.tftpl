@@ -9,84 +9,122 @@ ${jsonencode({
 
       content = {
         json = format(
-          "# Task API Canary Release\n\n## Environment: %s\n\nMonitor error rate, latency, deployment version, and instance distribution during rollout.",
+          "# Task API Canary Release — %s\n\nStable vs canary · error rate · latency · exceptions",
           environment
         )
       }
     },
+
     {
-      type = 1
-      name = "context"
+      type = 12
+      name = "dashboard"
 
       content = {
-        json = format(
-          "### Monitoring context\n\n**Application Insights component**  \n`%s`\n\nThe rollout split uses `AppVersion` and `AppRoleInstance`. The deployment pipeline must populate `AppVersion` consistently for a meaningful canary-versus-stable comparison.",
-          application_insights_id
-        )
-      }
-    },
-    {
-      type = 3
-      name = "failure_rate"
+        version   = "NotebookGroup/1.0"
+        groupType = "editable"
 
-      content = {
-        version                 = "KqlItem/1.0"
-        title                   = "Failure rate (last hour)"
-        query                   = failure_rate_query
-        queryType               = 0
-        resourceType            = "microsoft.operationalinsights/workspaces"
-        crossComponentResources = [workspace_id]
-        visualization           = "timechart"
-        size                    = 0
-      }
-    },
-    {
-      type = 3
-      name = "latency"
+        items = [
+          {
+            type        = 3
+            name        = "traffic_split"
+            customWidth = "50"
 
-      content = {
-        version                 = "KqlItem/1.0"
-        title                   = "P95 latency (last hour)"
-        query                   = latency_query
-        queryType               = 0
-        resourceType            = "microsoft.operationalinsights/workspaces"
-        crossComponentResources = [workspace_id]
-        visualization           = "timechart"
-        size                    = 0
-      }
-    },
-    {
-      type = 3
-      name = "instance_split"
+            styleSettings = {
+              showBorder = true
+            }
 
-      content = {
-        version                 = "KqlItem/1.0"
-        title                   = "Requests by application version and role instance"
-        query                   = instance_split_query
-        queryType               = 0
-        resourceType            = "microsoft.operationalinsights/workspaces"
-        crossComponentResources = [workspace_id]
-        visualization           = "timechart"
-        size                    = 0
-      }
-    },
-    {
-      type = 3
-      name = "exceptions"
+            content = {
+              version                 = "KqlItem/1.0"
+              title                   = "Traffic split · 5m"
+              query                   = traffic_split_query
+              queryType               = 0
+              resourceType            = "microsoft.operationalinsights/workspaces"
+              crossComponentResources = [workspace_id]
+              visualization           = "areachart"
+              size                    = 0
+              noDataMessage           = "No request telemetry in the last hour."
+            }
+          },
 
-      content = {
-        version                 = "KqlItem/1.0"
-        title                   = "Recent exceptions"
-        query                   = exceptions_query
-        queryType               = 0
-        resourceType            = "microsoft.operationalinsights/workspaces"
-        crossComponentResources = [workspace_id]
-        visualization           = "table"
-        size                    = 0
+          {
+            type        = 3
+            name        = "error_rate"
+            customWidth = "50"
+
+            styleSettings = {
+              showBorder = true
+            }
+
+            content = {
+              version                 = "KqlItem/1.0"
+              title                   = "Error rate by version · 5m"
+              query                   = error_rate_query
+              queryType               = 0
+              resourceType            = "microsoft.operationalinsights/workspaces"
+              crossComponentResources = [workspace_id]
+              visualization           = "timechart"
+              size                    = 0
+
+              chartSettings = {
+                ySettings = {
+                  min = 0
+                  max = 100
+                }
+              }
+
+              noDataMessage = "No request telemetry in the last hour."
+            }
+          },
+
+          {
+            type        = 3
+            name        = "latency"
+            customWidth = "50"
+
+            styleSettings = {
+              showBorder = true
+            }
+
+            content = {
+              version                 = "KqlItem/1.0"
+              title                   = "P95 latency by version · 5m"
+              query                   = latency_query
+              queryType               = 0
+              resourceType            = "microsoft.operationalinsights/workspaces"
+              crossComponentResources = [workspace_id]
+              visualization           = "timechart"
+              size                    = 0
+              noDataMessage           = "No versioned request latency telemetry in the last hour."
+            }
+          },
+
+          {
+            type        = 3
+            name        = "exceptions"
+            customWidth = "50"
+
+            styleSettings = {
+              showBorder = true
+            }
+
+            content = {
+              version                 = "KqlItem/1.0"
+              title                   = "Recent exceptions · 1h"
+              query                   = exceptions_query
+              queryType               = 0
+              resourceType            = "microsoft.operationalinsights/workspaces"
+              crossComponentResources = [workspace_id]
+              visualization           = "table"
+              size                    = 0
+              noDataMessage           = "No Application Insights exceptions in the last hour."
+            }
+          }
+        ]
       }
     }
   ]
 
-  isLocked           = false
-  defaultResourceIds = [workspace_id]
+  isLocked            = true
+  defaultResourceIds  = [workspace_id]
+  fallbackResourceIds = [workspace_id]
 })}

@@ -1,8 +1,12 @@
 # ---------------------------------------------------------------------------
-# CI – Terraform Plan & Validate
-# Runs `tofu plan` and publishes the plan artifact for CD to apply.
-# Does NOT apply; that requires manual trigger in CD.
+# CI — Terraform / OpenTofu plan
+#
+# Trigger: infra/terraform/main/** changes on main or feat/*
+# Runs `run.sh --plan` with OIDC identity `azdo-oidc-ci`.
+# Publishes NO artifact; plan is for validation only.
+# Fetches `azdo-pat` from Key Vault for the Azure DevOps Terraform provider.
 # ---------------------------------------------------------------------------
+
 
 trigger:
   batch: true
@@ -21,142 +25,91 @@ pr:
   branches:
     include:
       - main
+  paths:
+    include:
+      - infra/terraform/main/**
+      - azure-pipelines/ci/ci-terraform.yaml
+      - azure-pipelines/templates/**
+      - azure-pipelines/scripts/**
 
 variables:
   - group: terraform-vars
   - name: TOFU_VERSION
-    value: "1.12.6" # Pinned OpenTofu version
+    value: "1.12.6"
   - name: TF_WORKING_DIR
     value: "$(Build.SourcesDirectory)/infra/terraform/main"
-  - name: TF_PLAN_FILE
-    value: "$(Build.ArtifactStagingDirectory)/tfplan" # Binary plan artifact
   - name: TF_ENV
-    value: "staging" # Target environment
-  - name: TOFU_SHA256
-    value: "5dc43da4f750f33873dc25e94587128709e819e544b7be9016b255316153c3a8" # Verify download integrity
+    value: "staging"
 
 pool:
   vmImage: "ubuntu-24.04"
-
-workspace:
-  clean: all
 
 steps:
   - checkout: self
     clean: true
     fetchDepth: 1
+    fetchTags: false
     persistCredentials: false
     submodules: false
     lfs: false
 
-  # Verify required tools exist
+  - task: AzureKeyVault@2
+    displayName: "Fetch azdo-pat from Key Vault"
+    inputs:
+      azureSubscription: "azdo-oidc-ci"
+      KeyVaultName: "$(KEY_VAULT_NAME)"
+      SecretsFilter: "azdo-pat"
+      RunAsPreJob: false
+
   - bash: |
       set -euo pipefail
       command -v az
       command -v curl
       command -v jq
-      command -v sha256sum
-      command -v unzip
       command -v python3
       az version
     displayName: "Preflight hosted agent"
 
-  # Install pinned OpenTofu version with SHA-256 verification
-  - bash: |
-      set -euo pipefail
-      version='$(TOFU_VERSION)'
-      work='$(Agent.TempDirectory)/opentofu'
-      archive="$work/tofu_${version}_linux_amd64.zip"
-      mkdir -p "$work/bin"
-
-      # Download with hardened curl
-      curl --fail --silent --show-error --location \
-        --retry 3 --retry-all-errors --connect-timeout 10 \
-        --proto '=https' --tlsv1.2 \
-        -o "$archive" \
-        "https://github.com/opentofu/opentofu/releases/download/v${version}/tofu_${version}_linux_amd64.zip"
-
-      # Verify SHA-256 checksum
-      printf '%s  %s\n' '$(TOFU_SHA256)' "$archive" | sha256sum --check --status
-
-      unzip -q "$archive" -d "$work/bin"
-      test -x "$work/bin/tofu"
-      echo "##vso[task.prependpath]$work/bin"
-
-      # Verify installed version matches expected
-      actual="$("$work/bin/tofu" version -json | jq -r '.terraform_version')"
-      test "$actual" = "$version"
-      "$work/bin/tofu" version
-    displayName: "Install pinned OpenTofu"
-
-  # Run OpenTofu init/fmt/validate/plan using OIDC authentication
   - task: AzureCLI@2
-    displayName: "Validate and create OpenTofu plan"
+    displayName: "Validate and plan Terraform"
     inputs:
-      azureSubscription: "azdo-oidc-ci" # OIDC service connection for CI
-      addSpnToEnvironment: true # Enable OIDC token injection
+      azureSubscription: "azdo-oidc-ci"
+      addSpnToEnvironment: true
       scriptType: bash
       scriptLocation: inlineScript
       inlineScript: |
         set -euo pipefail
-        cd '$(TF_WORKING_DIR)'
 
-        # Configure OpenTofu for Azure DevOps OIDC authentication
-        export ARM_USE_OIDC='true'
+        : "${servicePrincipalId:?AzureCLI@2 did not expose servicePrincipalId}"
+        : "${tenantId:?AzureCLI@2 did not expose tenantId}"
+        : "${AZURESUBSCRIPTION_SERVICE_CONNECTION_ID:?AzureCLI@2 did not expose AZURESUBSCRIPTION_SERVICE_CONNECTION_ID}"
+        : "${SYSTEM_ACCESSTOKEN:?System.AccessToken is unavailable}"
+        : "${SYSTEM_OIDCREQUESTURI:?System.OidcRequestUri is unavailable}"
+        : "${AZDO_ORG_SERVICE_URL:?AZDO_ORG_SERVICE_URL is unavailable}"
+        : "${AZDO_PERSONAL_ACCESS_TOKEN:?Key Vault secret azdo-pat is unavailable}"
+
+        export ARM_USE_OIDC=true
+        export ARM_USE_CLI=false
         export ARM_CLIENT_ID="$servicePrincipalId"
         export ARM_TENANT_ID="$tenantId"
         export ARM_SUBSCRIPTION_ID="$(az account show --query id --output tsv)"
         export ARM_OIDC_REQUEST_TOKEN="$SYSTEM_ACCESSTOKEN"
         export ARM_OIDC_REQUEST_URL="$SYSTEM_OIDCREQUESTURI"
-        if [[ -n "${AZURESUBSCRIPTION_SERVICE_CONNECTION_ID:-}" ]]; then
-          export ARM_ADO_PIPELINE_SERVICE_CONNECTION_ID="$AZURESUBSCRIPTION_SERVICE_CONNECTION_ID"
-        fi
+        export ARM_ADO_PIPELINE_SERVICE_CONNECTION_ID="$AZURESUBSCRIPTION_SERVICE_CONNECTION_ID"
 
-        export TF_IN_AUTOMATION='true'
-        export TF_INPUT='false'
+        export AKS_USE_SERVICE_TAG=false
+        export SKIP_IP_FETCH=true
+        export TF_BACKEND_AUTH_MODE=oidc
+        export TOFU_VERSION="$TOFU_VERSION"
+        export TF_IN_AUTOMATION=true
+        export TF_INPUT=false
 
-        az account show --output none
-
-        tofu init -input=false -lock-timeout=5m -lockfile=readonly
-        tofu fmt -check -recursive      # Enforce formatting
-        tofu validate                    # Validate syntax and references
-        tofu plan -input=false -lock-timeout=5m -lockfile=readonly -out='$(TF_PLAN_FILE)'
+        cd "$TF_WORKING_DIR"
+        bash ./run.sh --plan --env "$TF_ENV"
     env:
       SYSTEM_ACCESSTOKEN: "$(System.AccessToken)"
       SYSTEM_OIDCREQUESTURI: "$(System.OidcRequestUri)"
-
-  # Write plan metadata for CD verification
-  - bash: |
-      set -euo pipefail
-      out='$(Build.ArtifactStagingDirectory)/plan-metadata.json'
-      TF_ENV='$(TF_ENV)' TOFU_VERSION='$(TOFU_VERSION)' PLAN_METADATA_PATH="$out" \
-      python3 - <<'PY'
-      import json, os
-      from pathlib import Path
-      metadata = {
-          "commit": os.environ["BUILD_SOURCEVERSION"],
-          "branch": os.environ["BUILD_SOURCEBRANCH"],
-          "pipelineRunId": os.environ["BUILD_BUILDID"],
-          "environment": os.environ["TF_ENV"],
-          "openTofuVersion": os.environ["TOFU_VERSION"],
-          "planFile": "tfplan",
-      }
-      Path(os.environ["PLAN_METADATA_PATH"]).write_text(
-          json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
-      PY
-    displayName: "Write plan provenance metadata"
-
-  # Ensure plan and metadata exist before publishing
-  - bash: |
-      set -euo pipefail
-      test -s '$(TF_PLAN_FILE)'
-      test -s '$(Build.ArtifactStagingDirectory)/plan-metadata.json'
-    displayName: "Verify plan artifact inputs"
-
-  # Publish plan artifact for CD pipeline
-  - task: PublishPipelineArtifact@1
-    displayName: "Publish immutable Terraform plan"
-    inputs:
-      targetPath: "$(Build.ArtifactStagingDirectory)"
-      artifact: "terraform-plan"
-      publishLocation: "pipeline"
+      AZDO_ORG_SERVICE_URL: "$(AZDO_ORG_SERVICE_URL)"
+      AZDO_PERSONAL_ACCESS_TOKEN: "$(azdo-pat)"
+      TF_VAR_owner: "$(TF_VAR_owner)"
+      TF_VAR_alert_email_address: "$(TF_VAR_alert_email_address)"

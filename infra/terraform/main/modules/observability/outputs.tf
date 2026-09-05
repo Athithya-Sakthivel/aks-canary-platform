@@ -45,11 +45,6 @@ output "action_group_id" {
   value       = azurerm_monitor_action_group.this.id
 }
 
-output "workbook_id" {
-  description = "ARM resource ID of the generic Azure Monitor workbook."
-  value       = azurerm_application_insights_workbook.this.id
-}
-
 output "app_slo_workbook_id" {
   description = "ARM resource ID of the Application SLO workbook, or null when disabled."
   value       = one(azurerm_application_insights_workbook.app_slo[*].id)

@@ -9,100 +9,176 @@ ${jsonencode({
 
       content = {
         json = format(
-          "# Task API Application SLO\n\n## Environment: %s\n\nGolden signals: latency, traffic, errors, and business metrics.",
+          "# Task API Application SLO — %s\n\nAvailability · Latency · Traffic · Errors · Business metrics",
           environment
         )
       }
     },
+
     {
-      type = 1
-      name = "context"
+      type = 12
+      name = "dashboard"
 
       content = {
-        json = format(
-          "### Monitoring context\n\n**Log Analytics workspace**  \n`%s`\n\n**Application Insights component**  \n`%s`\n\nKQL items execute against the workspace and filter application telemetry to this component.",
-          workspace_id,
-          application_insights_id
-        )
-      }
-    },
-    {
-      type = 3
-      name = "slo_snapshot"
+        version   = "NotebookGroup/1.0"
+        groupType = "editable"
 
-      content = {
-        version                 = "KqlItem/1.0"
-        title                   = "SLO snapshot (24h)"
-        query                   = snapshot_query
-        queryType               = 0
-        resourceType            = "microsoft.operationalinsights/workspaces"
-        crossComponentResources = [workspace_id]
-        visualization           = "table"
-        size                    = 0
-      }
-    },
-    {
-      type = 3
-      name = "latency"
+        items = [
+          {
+            type        = 3
+            name        = "availability"
+            customWidth = "50"
 
-      content = {
-        version                 = "KqlItem/1.0"
-        title                   = "Latency P95/P50"
-        query                   = latency_query
-        queryType               = 0
-        resourceType            = "microsoft.operationalinsights/workspaces"
-        crossComponentResources = [workspace_id]
-        visualization           = "timechart"
-        size                    = 0
-      }
-    },
-    {
-      type = 3
-      name = "traffic"
+            styleSettings = {
+              showBorder = true
+            }
 
-      content = {
-        version                 = "KqlItem/1.0"
-        title                   = "Request volume"
-        query                   = traffic_query
-        queryType               = 0
-        resourceType            = "microsoft.operationalinsights/workspaces"
-        crossComponentResources = [workspace_id]
-        visualization           = "timechart"
-        size                    = 0
-      }
-    },
-    {
-      type = 3
-      name = "errors"
+            content = {
+              version                 = "KqlItem/1.0"
+              title                   = "Availability · 24h"
+              query                   = availability_query
+              queryType               = 0
+              resourceType            = "microsoft.operationalinsights/workspaces"
+              crossComponentResources = [workspace_id]
+              visualization           = "text"
+              size                    = 0
 
-      content = {
-        version                 = "KqlItem/1.0"
-        title                   = "Error rate"
-        query                   = errors_query
-        queryType               = 0
-        resourceType            = "microsoft.operationalinsights/workspaces"
-        crossComponentResources = [workspace_id]
-        visualization           = "timechart"
-        size                    = 0
-      }
-    },
-    {
-      type = 3
-      name = "custom_metrics"
+              textSettings = {
+                style = "bignumber"
+              }
 
-      content = {
-        version                 = "KqlItem/1.0"
-        title                   = "Business metrics"
-        query                   = custom_metrics_query
-        queryType               = 0
-        resourceType            = "microsoft.operationalinsights/workspaces"
-        crossComponentResources = [workspace_id]
-        visualization           = "timechart"
-        size                    = 0
+              noDataMessage = "No request telemetry in the last 24 hours."
+            }
+          },
+
+          {
+            type        = 3
+            name        = "p95"
+            customWidth = "50"
+
+            styleSettings = {
+              showBorder = true
+            }
+
+            content = {
+              version                 = "KqlItem/1.0"
+              title                   = "P95 latency · 24h"
+              query                   = p95_query
+              queryType               = 0
+              resourceType            = "microsoft.operationalinsights/workspaces"
+              crossComponentResources = [workspace_id]
+              visualization           = "text"
+              size                    = 0
+
+              textSettings = {
+                style = "bignumber"
+              }
+
+              noDataMessage = "No request latency telemetry in the last 24 hours."
+            }
+          },
+
+          {
+            type        = 3
+            name        = "traffic"
+            customWidth = "50"
+
+            styleSettings = {
+              showBorder = true
+            }
+
+            content = {
+              version                 = "KqlItem/1.0"
+              title                   = "Request rate · 10m"
+              query                   = traffic_query
+              queryType               = 0
+              resourceType            = "microsoft.operationalinsights/workspaces"
+              crossComponentResources = [workspace_id]
+              visualization           = "timechart"
+              size                    = 0
+              noDataMessage           = "No request telemetry in the last 24 hours."
+            }
+          },
+
+          {
+            type        = 3
+            name        = "errors"
+            customWidth = "50"
+
+            styleSettings = {
+              showBorder = true
+            }
+
+            content = {
+              version                 = "KqlItem/1.0"
+              title                   = "Error rate · 10m"
+              query                   = errors_query
+              queryType               = 0
+              resourceType            = "microsoft.operationalinsights/workspaces"
+              crossComponentResources = [workspace_id]
+              visualization           = "timechart"
+              size                    = 0
+
+              chartSettings = {
+                ySettings = {
+                  min = 0
+                  max = 100
+                }
+              }
+
+              noDataMessage = "No request telemetry in the last 24 hours."
+            }
+          },
+
+          {
+            type        = 3
+            name        = "business_metrics"
+            customWidth = "50"
+
+            styleSettings = {
+              showBorder = true
+            }
+
+            content = {
+              version                 = "KqlItem/1.0"
+              title                   = "Business metrics · 10m"
+              query                   = business_metrics_query
+              queryType               = 0
+              resourceType            = "microsoft.operationalinsights/workspaces"
+              crossComponentResources = [workspace_id]
+              visualization           = "timechart"
+              size                    = 0
+              noDataMessage           = "No business metric telemetry in the last 24 hours."
+            }
+          },
+
+          {
+            type        = 3
+            name        = "jvm_heap"
+            customWidth = "50"
+
+            styleSettings = {
+              showBorder = true
+            }
+
+            content = {
+              version                 = "KqlItem/1.0"
+              title                   = "JVM heap used · 10m"
+              query                   = jvm_heap_query
+              queryType               = 0
+              resourceType            = "microsoft.operationalinsights/workspaces"
+              crossComponentResources = [workspace_id]
+              visualization           = "timechart"
+              size                    = 0
+              noDataMessage           = "No jvm_memory_used metric telemetry in the last 24 hours."
+            }
+          }
+        ]
       }
     }
   ]
 
-  isLocked           = false
-  defaultResourceIds = [workspace_id]
+  isLocked            = true
+  defaultResourceIds  = [workspace_id]
+  fallbackResourceIds = [workspace_id]
 })}

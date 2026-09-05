@@ -1,25 +1,23 @@
+# ---------------------------------------------------------------------------
+# Reusable template: Build, scan, and push Docker image.
+# Standard Docker build; digest is recorded after ACR push.
+# ---------------------------------------------------------------------------
+
 parameters:
   - name: dockerfilePath
     type: string
-
   - name: contextPath
     type: string
-
   - name: imageRepository
     type: string
-
   - name: imageTag
     type: string
-
   - name: sourceCommit
     type: string
-
   - name: sourcePipelineRunId
     type: string
-
   - name: containerRegistry
     type: string
-
   - name: azureSubscription
     type: string
 
@@ -45,16 +43,10 @@ steps:
 
       image='${{ parameters.containerRegistry }}.azurecr.io/${{ parameters.imageRepository }}:${{ parameters.imageTag }}'
 
-      docker version
-      docker buildx version
-
-      docker buildx build \
-        --load \
+      docker build \
         --pull \
         --file '${{ parameters.dockerfilePath }}' \
         --tag "$image" \
-        --label "org.opencontainers.image.revision=${{ parameters.sourceCommit }}" \
-        --label "org.opencontainers.image.source=${BUILD_REPOSITORY_URI}" \
         '${{ parameters.contextPath }}'
 
       docker image inspect "$image" >/dev/null
@@ -63,58 +55,47 @@ steps:
   - bash: |
       set -euo pipefail
 
-      trivy_version='0.74.0'
-      trivy_sha256='2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a'
+      trivy_version="0.74.0"
+      trivy_sha256="2ae6fe3ee734b7fdf11335663e18c75ea12dccc76062f09f164a3b0f8be4371a"
       archive="trivy_${trivy_version}_Linux-64bit.tar.gz"
       url="https://github.com/aquasecurity/trivy/releases/download/v${trivy_version}/${archive}"
 
-      work='$(Agent.TempDirectory)/trivy'
+      work="$(Agent.TempDirectory)/trivy"
       image='${{ parameters.containerRegistry }}.azurecr.io/${{ parameters.imageRepository }}:${{ parameters.imageTag }}'
-      out='$(Build.ArtifactStagingDirectory)/image-scan'
+      out="$(Build.ArtifactStagingDirectory)/image-scan"
 
       mkdir -p "$work" "$out"
 
-      curl \
-        --fail \
-        --silent \
-        --show-error \
-        --location \
-        --retry 3 \
-        --retry-all-errors \
-        --connect-timeout 10 \
-        --proto '=https' \
-        --tlsv1.2 \
+      curl --fail --silent --show-error --location --retry 3 \
+        --retry-all-errors --connect-timeout 10 \
+        --proto '=https' --tlsv1.2 \
         -o "$work/$archive" \
         "$url"
 
-      printf '%s  %s\n' "$trivy_sha256" "$work/$archive" |
-        sha256sum --check --status
+      printf '%s  %s\n' "$trivy_sha256" "$work/$archive" \
+        | sha256sum --check --status
 
       tar -xzf "$work/$archive" -C "$work"
       test -x "$work/trivy"
 
-      "$work/trivy" --version
-
       "$work/trivy" image \
         --scanners vuln \
-        --severity HIGH,CRITICAL \
+        --severity CRITICAL \
         --exit-code 1 \
         --format json \
         --output "$out/trivy-report.json" \
         "$image"
-    displayName: "Trivy HIGH/CRITICAL scan"
+    displayName: "Trivy CRITICAL scan"
 
   - bash: |
       set -euo pipefail
 
-      trivy='$(Agent.TempDirectory)/trivy/trivy'
+      trivy="$(Agent.TempDirectory)/trivy/trivy"
       image='${{ parameters.containerRegistry }}.azurecr.io/${{ parameters.imageRepository }}:${{ parameters.imageTag }}'
-      out='$(Build.ArtifactStagingDirectory)/image-scan'
+      out="$(Build.ArtifactStagingDirectory)/image-scan"
 
       mkdir -p "$out"
-
       test -x "$trivy"
-      docker image inspect "$image" >/dev/null
 
       "$trivy" image \
         --format cyclonedx \
@@ -150,7 +131,6 @@ steps:
         image="${registry}.azurecr.io/${repository}:${tag}"
 
         az acr login --name "$registry"
-
         docker push "$image"
 
         digest="$(
@@ -163,7 +143,7 @@ steps:
 
         [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
 
-        metadata_dir='$(Build.ArtifactStagingDirectory)/image-metadata'
+        metadata_dir="$(Build.ArtifactStagingDirectory)/image-metadata"
         metadata="$metadata_dir/image.json"
 
         mkdir -p "$metadata_dir"

@@ -9,99 +9,160 @@ ${jsonencode({
 
       content = {
         json = format(
-          "# Task API Infrastructure\n\n## Environment: %s\n\nAKS control-plane activity and node saturation metrics.",
+          "# Task API Infrastructure — %s\n\nAKS node saturation · API server errors · pod restarts",
           environment
         )
       }
     },
+
     {
-      type = 1
-      name = "context"
+      type = 12
+      name = "dashboard"
 
       content = {
-        json = format(
-          "### Monitoring context\n\n**Log Analytics workspace**  \n`%s`\n\nControl-plane data comes from AKS diagnostic logs; node metrics come from Azure Monitor metrics exported to the workspace.",
-          workspace_id
-        )
-      }
-    },
-    {
-      type = 3
-      name = "control_plane"
+        version   = "NotebookGroup/1.0"
+        groupType = "editable"
 
-      content = {
-        version                 = "KqlItem/1.0"
-        title                   = "AKS control-plane activity"
-        query                   = control_plane_query
-        queryType               = 0
-        resourceType            = "microsoft.operationalinsights/workspaces"
-        crossComponentResources = [workspace_id]
-        visualization           = "timechart"
-        size                    = 0
-      }
-    },
-    {
-      type = 3
-      name = "api_errors"
+        items = [
+          {
+            type        = 3
+            name        = "api_errors"
+            customWidth = "50"
 
-      content = {
-        version                 = "KqlItem/1.0"
-        title                   = "API server errors"
-        query                   = api_errors_query
-        queryType               = 0
-        resourceType            = "microsoft.operationalinsights/workspaces"
-        crossComponentResources = [workspace_id]
-        visualization           = "timechart"
-        size                    = 0
-      }
-    },
-    {
-      type = 3
-      name = "node_cpu"
+            styleSettings = {
+              showBorder = true
+            }
 
-      content = {
-        version                 = "KqlItem/1.0"
-        title                   = "Node CPU usage"
-        query                   = node_cpu_query
-        queryType               = 0
-        resourceType            = "microsoft.operationalinsights/workspaces"
-        crossComponentResources = [workspace_id]
-        visualization           = "timechart"
-        size                    = 0
-      }
-    },
-    {
-      type = 3
-      name = "node_memory"
+            content = {
+              version                 = "KqlItem/1.0"
+              title                   = "API server errors · 24h"
+              query                   = api_errors_query
+              queryType               = 0
+              resourceType            = "microsoft.operationalinsights/workspaces"
+              crossComponentResources = [workspace_id]
+              visualization           = "timechart"
+              size                    = 0
+              noDataMessage           = "No kube-apiserver Error/Fatal events in the last 24 hours."
+            }
+          },
 
-      content = {
-        version                 = "KqlItem/1.0"
-        title                   = "Node memory working set"
-        query                   = node_memory_query
-        queryType               = 0
-        resourceType            = "microsoft.operationalinsights/workspaces"
-        crossComponentResources = [workspace_id]
-        visualization           = "timechart"
-        size                    = 0
-      }
-    },
-    {
-      type = 3
-      name = "node_disk"
+          {
+            type        = 3
+            name        = "node_cpu"
+            customWidth = "50"
 
-      content = {
-        version                 = "KqlItem/1.0"
-        title                   = "Node disk usage"
-        query                   = node_disk_query
-        queryType               = 0
-        resourceType            = "microsoft.operationalinsights/workspaces"
-        crossComponentResources = [workspace_id]
-        visualization           = "timechart"
-        size                    = 0
+            styleSettings = {
+              showBorder = true
+            }
+
+            content = {
+              version                 = "KqlItem/1.0"
+              title                   = "Node CPU · 10m average"
+              query                   = node_cpu_query
+              queryType               = 0
+              resourceType            = "microsoft.operationalinsights/workspaces"
+              crossComponentResources = [workspace_id]
+              visualization           = "timechart"
+              size                    = 0
+
+              chartSettings = {
+                ySettings = {
+                  min = 0
+                  max = 100
+                }
+              }
+
+              noDataMessage = "No AKS node CPU metrics in the last 24 hours."
+            }
+          },
+
+          {
+            type        = 3
+            name        = "node_memory"
+            customWidth = "50"
+
+            styleSettings = {
+              showBorder = true
+            }
+
+            content = {
+              version                 = "KqlItem/1.0"
+              title                   = "Node memory · 10m average"
+              query                   = node_memory_query
+              queryType               = 0
+              resourceType            = "microsoft.operationalinsights/workspaces"
+              crossComponentResources = [workspace_id]
+              visualization           = "timechart"
+              size                    = 0
+
+              chartSettings = {
+                ySettings = {
+                  min = 0
+                  max = 100
+                }
+              }
+
+              noDataMessage = "No AKS node memory metrics in the last 24 hours."
+            }
+          },
+
+          {
+            type        = 3
+            name        = "node_disk"
+            customWidth = "50"
+
+            styleSettings = {
+              showBorder = true
+            }
+
+            content = {
+              version                 = "KqlItem/1.0"
+              title                   = "Node disk · 10m average"
+              query                   = node_disk_query
+              queryType               = 0
+              resourceType            = "microsoft.operationalinsights/workspaces"
+              crossComponentResources = [workspace_id]
+              visualization           = "timechart"
+              size                    = 0
+
+              chartSettings = {
+                ySettings = {
+                  min = 0
+                  max = 100
+                }
+              }
+
+              noDataMessage = "No AKS node disk metrics in the last 24 hours."
+            }
+          },
+
+          {
+            type        = 3
+            name        = "pod_restarts"
+            customWidth = "50"
+
+            styleSettings = {
+              showBorder = true
+            }
+
+            content = {
+              version                 = "KqlItem/1.0"
+              title                   = "Pod restarts · 15m"
+              query                   = pod_restarts_query
+              queryType               = 0
+              resourceType            = "microsoft.operationalinsights/workspaces"
+              crossComponentResources = [workspace_id]
+              visualization           = "table"
+              size                    = 0
+              noDataMessage           = "No pod restart growth detected in the last 15 minutes."
+            }
+          }
+        ]
       }
     }
   ]
 
-  isLocked           = false
-  defaultResourceIds = [workspace_id]
+  isLocked            = true
+  defaultResourceIds  = [workspace_id]
+  fallbackResourceIds = [workspace_id]
 })}

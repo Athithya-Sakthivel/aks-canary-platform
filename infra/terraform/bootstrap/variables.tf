@@ -152,3 +152,14 @@ variable "cloudflare_tunnel_id" {
   description = "Cloudflare Tunnel ID"
   type        = string
 }
+
+variable "subscription_id" {
+  description = "Azure subscription ID."
+  type        = string
+}
+
+variable "environment" {
+  description = "Deployment environment (staging or prod)."
+  type        = string
+  default     = "staging"
+}

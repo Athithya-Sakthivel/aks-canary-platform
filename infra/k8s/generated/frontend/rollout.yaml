@@ -26,15 +26,30 @@ spec:
       labels:
         app: frontend
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: frontend
           image: ghcr.io/athithya-sakthivel/task-api-frontend:v1
+          env:
+            - name: NGINX_ENVSUBST_FILTER
+              value: '^APPLICATIONINSIGHTS_CONNECTION_STRING$'
+            - name: APPLICATIONINSIGHTS_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: frontend-secrets
+                  key: APPLICATIONINSIGHTS_CONNECTION_STRING
+                  optional: true
           ports:
             - containerPort: 8080
+              name: http
+              protocol: TCP
           volumeMounts:
             - name: nginx-config
-              mountPath: /etc/nginx/conf.d/default.conf
-              subPath: nginx.conf
+              mountPath: /etc/nginx/templates/default.conf.template
+              subPath: default.conf.template
+              readOnly: true
           resources:
             requests:
               cpu: 50m
@@ -42,18 +57,27 @@ spec:
             limits:
               cpu: 200m
               memory: 128Mi
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /health
-              port: 8080
-            initialDelaySeconds: 5
-            periodSeconds: 10
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /health
-              port: 8080
-            initialDelaySeconds: 10
-            periodSeconds: 15
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
           securityContext:
             runAsNonRoot: true
             runAsUser: 101
@@ -64,4 +88,7 @@ spec:
       volumes:
         - name: nginx-config
           configMap:
-            name: frontend-config
+            name: frontend-nginx-config
+            items:
+              - key: default.conf.template
+                path: default.conf.template

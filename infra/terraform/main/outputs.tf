@@ -177,10 +177,6 @@ output "observability_action_group_id" {
   value       = module.observability.action_group_id
 }
 
-output "observability_workbook_id" {
-  description = "Generic Azure Monitor Workbook ARM resource ID."
-  value       = module.observability.workbook_id
-}
 
 output "observability_app_slo_workbook_id" {
   description = "Application SLO Workbook ARM resource ID."

@@ -14,7 +14,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-GEN_DIR="$SCRIPT_DIR/../infra/k8s/generated/backend"
+GEN_DIR="${RUNNER_TEMP:-/tmp}/k8s-generated/backend"
 
 # --- Defaults (override via flags or environment) ---------------------------
 NAMESPACE="${NAMESPACE:-task-api}"
