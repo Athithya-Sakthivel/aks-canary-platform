@@ -161,3 +161,30 @@ resource "azurerm_role_assignment" "cd_keyvault_secrets_user" {
   role_definition_name = "Key Vault Secrets User"
   principal_id         = azuread_service_principal.cd.object_id
 }
+
+
+# ------------------------------------------------------------------------------
+# AKS cluster access for CI/CD
+#
+# These are subscription-scope for one-shot automation because terraform/main
+# does not exist yet during bootstrap. After main apply, scope can be tightened
+# to the actual AKS resource/resource group.
+# ------------------------------------------------------------------------------
+
+resource "azurerm_role_assignment" "ci_aks_cluster_user" {
+  scope                = data.azurerm_subscription.current.id
+  role_definition_name = "Azure Kubernetes Service Cluster User Role"
+  principal_id         = azuread_service_principal.ci.object_id
+}
+
+resource "azurerm_role_assignment" "cd_aks_cluster_user" {
+  scope                = data.azurerm_subscription.current.id
+  role_definition_name = "Azure Kubernetes Service Cluster User Role"
+  principal_id         = azuread_service_principal.cd.object_id
+}
+
+resource "azurerm_role_assignment" "cd_aks_cluster_admin" {
+  scope                = data.azurerm_subscription.current.id
+  role_definition_name = "Azure Kubernetes Service RBAC Cluster Admin"
+  principal_id         = azuread_service_principal.cd.object_id
+}
