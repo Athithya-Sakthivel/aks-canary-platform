@@ -71,3 +71,22 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+
+variable "eso_identity_name" {
+  description = "Name of the User Assigned Managed Identity used by External Secrets Operator."
+  type        = string
+  default     = null
+}
+
+variable "eso_service_account_namespace" {
+  description = "Kubernetes namespace for the ESO workload identity ServiceAccount."
+  type        = string
+  default     = "external-secrets"
+}
+
+variable "eso_service_account_name" {
+  description = "Kubernetes ServiceAccount name for the ESO workload identity."
+  type        = string
+  default     = "eso-azure-kv"
+}

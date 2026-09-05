@@ -87,3 +87,31 @@ resource "azurerm_role_assignment" "acr_pull" {
   role_definition_name = "AcrPull"
   principal_id         = azurerm_kubernetes_cluster.this.kubelet_identity[0].object_id
 }
+
+# ------------------------------------------------------------------------------
+# User Assigned Managed Identity for External Secrets Operator (Workload Identity)
+# ------------------------------------------------------------------------------
+
+resource "azurerm_user_assigned_identity" "eso" {
+  count = var.eso_identity_name != null ? 1 : 0
+
+  name                = var.eso_identity_name
+  resource_group_name = var.resource_group_name
+  location            = var.location
+
+  tags = var.tags
+}
+
+# ------------------------------------------------------------------------------
+# Federated Identity Credential
+# ------------------------------------------------------------------------------
+
+resource "azurerm_federated_identity_credential" "eso" {
+  count = var.eso_identity_name != null ? 1 : 0
+
+  name                      = "eso-workload-identity"
+  user_assigned_identity_id = azurerm_user_assigned_identity.eso[0].id
+  audience                  = ["api://AzureADTokenExchange"]
+  issuer                    = azurerm_kubernetes_cluster.this.oidc_issuer_url
+  subject                   = "system:serviceaccount:${var.eso_service_account_namespace}:${var.eso_service_account_name}"
+}

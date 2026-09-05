@@ -64,6 +64,15 @@ output "aks_node_resource_group" {
   value       = module.aks.node_resource_group
 }
 
+output "eso_identity_client_id" {
+  description = "Client ID of the ESO user-assigned managed identity."
+  value       = module.aks.eso_identity_client_id
+}
+
+output "eso_identity_principal_id" {
+  description = "Principal ID of the ESO user-assigned managed identity."
+  value       = module.aks.eso_identity_principal_id
+}
 # ------------------------------------------------------------------------------
 # Networking
 # ------------------------------------------------------------------------------

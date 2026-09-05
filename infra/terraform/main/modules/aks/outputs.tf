@@ -37,3 +37,14 @@ output "kube_config" {
   value       = azurerm_kubernetes_cluster.this.kube_config_raw
   sensitive   = true
 }
+
+
+output "eso_identity_client_id" {
+  description = "Client ID of the ESO user-assigned managed identity."
+  value       = one(azurerm_user_assigned_identity.eso[*].client_id)
+}
+
+output "eso_identity_principal_id" {
+  description = "Principal ID of the ESO user-assigned managed identity."
+  value       = one(azurerm_user_assigned_identity.eso[*].principal_id)
+}

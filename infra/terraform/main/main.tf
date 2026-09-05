@@ -15,6 +15,9 @@ data "azurerm_key_vault_secret" "database_password" {
   key_vault_id = data.azurerm_key_vault.bootstrap.id
 }
 
+# ------------------------------------------------------------------------------
+# State / ACR
+# ------------------------------------------------------------------------------
 module "state" {
   source = "./modules/state"
 
@@ -26,6 +29,9 @@ module "state" {
   tags                = local.common_tags
 }
 
+# ------------------------------------------------------------------------------
+# Networking
+# ------------------------------------------------------------------------------
 module "networking" {
   source = "./modules/networking"
 
@@ -48,6 +54,9 @@ module "networking" {
   tags                           = local.common_tags
 }
 
+# ------------------------------------------------------------------------------
+# AKS with ESO Workload Identity
+# ------------------------------------------------------------------------------
 module "aks" {
   source = "./modules/aks"
 
@@ -63,9 +72,27 @@ module "aks" {
   service_cidr        = var.aks_service_cidr
   dns_service_ip      = var.aks_dns_service_ip
   pod_cidr            = var.aks_pod_cidr
-  tags                = local.common_tags
+
+  # Add these three lines
+  eso_identity_name             = "eso-${local.project_abbr}-${local.env_abbr}-${local.sub_suffix}"
+  eso_service_account_namespace = "external-secrets"
+  eso_service_account_name      = "eso-azure-kv"
+
+  tags = local.common_tags
 }
 
+# ------------------------------------------------------------------------------
+# Key Vault access for ESO Workload Identity
+# ------------------------------------------------------------------------------
+resource "azurerm_role_assignment" "eso_keyvault_secrets_user" {
+  scope                = data.azurerm_key_vault.bootstrap.id
+  role_definition_name = "Key Vault Secrets User"
+  principal_id         = module.aks.eso_identity_principal_id
+}
+
+# ------------------------------------------------------------------------------
+# PostgreSQL Flexible Server with Private Link
+# ------------------------------------------------------------------------------
 module "postgresql" {
   source = "./modules/postgresql"
 
@@ -83,6 +110,7 @@ module "postgresql" {
   private_dns_zone_id        = module.networking.private_dns_zone_id
   tags                       = local.common_tags
 }
+
 # ------------------------------------------------------------------------------
 # Observability
 # ------------------------------------------------------------------------------
@@ -126,7 +154,9 @@ module "observability" {
   tags = local.common_tags
 }
 
-
+# ------------------------------------------------------------------------------
+# Azure DevOps application pipelines
+# ------------------------------------------------------------------------------
 module "azure_devops" {
   source = "./modules/azure_devops"
 

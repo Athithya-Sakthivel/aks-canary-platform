@@ -188,3 +188,9 @@ resource "azurerm_role_assignment" "cd_aks_cluster_admin" {
   role_definition_name = "Azure Kubernetes Service RBAC Cluster Admin"
   principal_id         = azuread_service_principal.cd.object_id
 }
+
+resource "azurerm_role_assignment" "cd_keyvault_secrets_officer" {
+  scope                = azurerm_key_vault.bootstrap.id
+  role_definition_name = "Key Vault Secrets Officer"
+  principal_id         = azuread_service_principal.cd.object_id
+}
