@@ -46,6 +46,26 @@ output "action_group_id" {
 }
 
 output "workbook_id" {
-  description = "ARM resource ID of the Azure Monitor workbook."
+  description = "ARM resource ID of the generic Azure Monitor workbook."
   value       = azurerm_application_insights_workbook.this.id
+}
+
+output "app_slo_workbook_id" {
+  description = "ARM resource ID of the Application SLO workbook, or null when disabled."
+  value       = one(azurerm_application_insights_workbook.app_slo[*].id)
+}
+
+output "infra_workbook_id" {
+  description = "ARM resource ID of the Infrastructure workbook, or null when disabled."
+  value       = one(azurerm_application_insights_workbook.infra[*].id)
+}
+
+output "database_workbook_id" {
+  description = "ARM resource ID of the Database workbook, or null when disabled."
+  value       = one(azurerm_application_insights_workbook.database[*].id)
+}
+
+output "canary_workbook_id" {
+  description = "ARM resource ID of the Canary Release workbook, or null when disabled."
+  value       = one(azurerm_application_insights_workbook.canary[*].id)
 }

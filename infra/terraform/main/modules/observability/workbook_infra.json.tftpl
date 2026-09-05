@@ -1,0 +1,107 @@
+${jsonencode({
+  "$schema" = "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+  version   = "Notebook/1.0"
+
+  items = [
+    {
+      type = 1
+      name = "title"
+
+      content = {
+        json = format(
+          "# Task API Infrastructure\n\n## Environment: %s\n\nAKS control-plane activity and node saturation metrics.",
+          environment
+        )
+      }
+    },
+    {
+      type = 1
+      name = "context"
+
+      content = {
+        json = format(
+          "### Monitoring context\n\n**Log Analytics workspace**  \n`%s`\n\nControl-plane data comes from AKS diagnostic logs; node metrics come from Azure Monitor metrics exported to the workspace.",
+          workspace_id
+        )
+      }
+    },
+    {
+      type = 3
+      name = "control_plane"
+
+      content = {
+        version                 = "KqlItem/1.0"
+        title                   = "AKS control-plane activity"
+        query                   = control_plane_query
+        queryType               = 0
+        resourceType            = "microsoft.operationalinsights/workspaces"
+        crossComponentResources = [workspace_id]
+        visualization           = "timechart"
+        size                    = 0
+      }
+    },
+    {
+      type = 3
+      name = "api_errors"
+
+      content = {
+        version                 = "KqlItem/1.0"
+        title                   = "API server errors"
+        query                   = api_errors_query
+        queryType               = 0
+        resourceType            = "microsoft.operationalinsights/workspaces"
+        crossComponentResources = [workspace_id]
+        visualization           = "timechart"
+        size                    = 0
+      }
+    },
+    {
+      type = 3
+      name = "node_cpu"
+
+      content = {
+        version                 = "KqlItem/1.0"
+        title                   = "Node CPU usage"
+        query                   = node_cpu_query
+        queryType               = 0
+        resourceType            = "microsoft.operationalinsights/workspaces"
+        crossComponentResources = [workspace_id]
+        visualization           = "timechart"
+        size                    = 0
+      }
+    },
+    {
+      type = 3
+      name = "node_memory"
+
+      content = {
+        version                 = "KqlItem/1.0"
+        title                   = "Node memory working set"
+        query                   = node_memory_query
+        queryType               = 0
+        resourceType            = "microsoft.operationalinsights/workspaces"
+        crossComponentResources = [workspace_id]
+        visualization           = "timechart"
+        size                    = 0
+      }
+    },
+    {
+      type = 3
+      name = "node_disk"
+
+      content = {
+        version                 = "KqlItem/1.0"
+        title                   = "Node disk usage"
+        query                   = node_disk_query
+        queryType               = 0
+        resourceType            = "microsoft.operationalinsights/workspaces"
+        crossComponentResources = [workspace_id]
+        visualization           = "timechart"
+        size                    = 0
+      }
+    }
+  ]
+
+  isLocked           = false
+  defaultResourceIds = [workspace_id]
+})}

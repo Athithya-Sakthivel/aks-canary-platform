@@ -80,6 +80,7 @@ docker run -d \
   --name "$FRONTEND_CONTAINER" \
   --network "$NETWORK" \
   -p "$FRONTEND_PORT:8080" \
+  -e APPLICATIONINSIGHTS_CONNECTION_STRING="$APPINSIGHTS_CONN_STR" \
   "$FRONTEND_IMAGE" >/dev/null
 
 # 8. Wait for backend health

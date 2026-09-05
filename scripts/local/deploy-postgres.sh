@@ -109,6 +109,18 @@ stringData:
   APPLICATIONINSIGHTS_CONNECTION_STRING: "$APPINSIGHTS_CS"
 EOF
 
+
+# After creating backend-secrets
+APPINSIGHTS_CS="$(az keyvault secret show \
+  --vault-name "kv-azdo-bootstrap-${SUFFIX}" \
+  --name "ApplicationInsightsConnectionString" \
+  --query value -o tsv)"
+
+kubectl create secret generic frontend-secrets \
+  --namespace task-api \
+  --from-literal=APPLICATIONINSIGHTS_CONNECTION_STRING="$APPINSIGHTS_CS" \
+  --dry-run=client -o yaml | kubectl apply -f -
+  
 # ------------------------------------------------------------------------------
 # 4. Deploy local PostgreSQL
 # ------------------------------------------------------------------------------

@@ -84,3 +84,10 @@ secrets:
 
       - secretKey: APPLICATIONINSIGHTS_CONNECTION_STRING
         remoteRef: ApplicationInsightsConnectionString
+
+  - name: frontend-secrets
+    targetNamespace: task-api
+    refreshInterval: 1h
+    data:
+      - secretKey: APPLICATIONINSIGHTS_CONNECTION_STRING
+        remoteRef: ApplicationInsightsConnectionString

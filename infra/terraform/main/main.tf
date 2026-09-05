@@ -83,7 +83,9 @@ module "postgresql" {
   private_dns_zone_id        = module.networking.private_dns_zone_id
   tags                       = local.common_tags
 }
-
+# ------------------------------------------------------------------------------
+# Observability
+# ------------------------------------------------------------------------------
 module "observability" {
   source = "./modules/observability"
 
@@ -98,18 +100,32 @@ module "observability" {
 
   alert_email_address = var.alert_email_address
 
-  aks_cluster_id = module.aks.cluster_id
-
+  aks_cluster_id       = module.aks.cluster_id
   postgresql_server_id = module.postgresql.server_id
 
-  enable_cpu_alert                         = var.enable_cpu_alert
-  enable_memory_alert                      = var.enable_memory_alert
-  enable_pod_restarts_alert                = var.enable_pod_restarts_alert
-  enable_failed_requests_alert             = var.enable_failed_requests_alert
-  enable_postgres_storage_alert            = var.enable_postgres_storage_alert
+  enable_cpu_alert              = var.enable_cpu_alert
+  enable_memory_alert           = var.enable_memory_alert
+  enable_pod_restarts_alert     = var.enable_pod_restarts_alert
+  enable_failed_requests_alert  = var.enable_failed_requests_alert
+  enable_postgres_storage_alert = var.enable_postgres_storage_alert
+
+  enable_burn_rate_fast_alert = var.enable_burn_rate_fast_alert
+  enable_burn_rate_slow_alert = var.enable_burn_rate_slow_alert
+  enable_postgres_cpu_alert   = var.enable_postgres_cpu_alert
+
+  enable_aks_diagnostics        = var.enable_aks_diagnostics
+  enable_postgresql_diagnostics = var.enable_postgresql_diagnostics
+
+  enable_app_slo_workbook  = var.enable_app_slo_workbook
+  enable_infra_workbook    = var.enable_infra_workbook
+  enable_database_workbook = var.enable_database_workbook
+  enable_canary_workbook   = var.enable_canary_workbook
+
   application_insights_sampling_percentage = var.application_insights_sampling_percentage
-  tags                                     = local.common_tags
+
+  tags = local.common_tags
 }
+
 
 module "azure_devops" {
   source = "./modules/azure_devops"

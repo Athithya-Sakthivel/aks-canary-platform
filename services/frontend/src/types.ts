@@ -16,3 +16,12 @@ export interface Task {
   createdAt: string;
   updatedAt: string;
 }
+
+
+declare global {
+  interface Window {
+    APPINSIGHTS_CONNECTION_STRING?: string;
+  }
+}
+
+export {};

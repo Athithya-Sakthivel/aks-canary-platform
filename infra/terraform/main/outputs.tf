@@ -178,8 +178,28 @@ output "observability_action_group_id" {
 }
 
 output "observability_workbook_id" {
-  description = "Azure Monitor Workbook ARM resource ID."
+  description = "Generic Azure Monitor Workbook ARM resource ID."
   value       = module.observability.workbook_id
+}
+
+output "observability_app_slo_workbook_id" {
+  description = "Application SLO Workbook ARM resource ID."
+  value       = module.observability.app_slo_workbook_id
+}
+
+output "observability_infra_workbook_id" {
+  description = "Infrastructure Workbook ARM resource ID."
+  value       = module.observability.infra_workbook_id
+}
+
+output "observability_database_workbook_id" {
+  description = "Database Workbook ARM resource ID."
+  value       = module.observability.database_workbook_id
+}
+
+output "observability_canary_workbook_id" {
+  description = "Canary Release Workbook ARM resource ID."
+  value       = module.observability.canary_workbook_id
 }
 
 # ------------------------------------------------------------------------------

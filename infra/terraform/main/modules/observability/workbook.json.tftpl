@@ -35,22 +35,13 @@ ${jsonencode({
 
       content = {
         version = "KqlItem/1.0"
-
         title = "24-hour telemetry snapshot"
-
         query = snapshot_query
-
-        queryType    = 0
+        queryType = 0
         resourceType = "microsoft.operationalinsights/workspaces"
-
-        resourceIds = [
-          workspace_id
-        ]
-
+        resourceIds = [workspace_id]
         visualization = "table"
-
         size = 0
-
         noDataMessage = "No Application Insights telemetry has arrived yet. The workbook is deployed and will populate as the application emits telemetry."
       }
     },
@@ -61,22 +52,13 @@ ${jsonencode({
 
       content = {
         version = "KqlItem/1.0"
-
         title = "Request volume and failure rate"
-
         query = request_query
-
-        queryType    = 0
+        queryType = 0
         resourceType = "microsoft.operationalinsights/workspaces"
-
-        resourceIds = [
-          workspace_id
-        ]
-
+        resourceIds = [workspace_id]
         visualization = "timechart"
-
         size = 0
-
         noDataMessage = "No request telemetry was returned for the last 24 hours."
       }
     },
@@ -87,22 +69,13 @@ ${jsonencode({
 
       content = {
         version = "KqlItem/1.0"
-
         title = "Dependency traffic and failures"
-
         query = dependency_query
-
-        queryType    = 0
+        queryType = 0
         resourceType = "microsoft.operationalinsights/workspaces"
-
-        resourceIds = [
-          workspace_id
-        ]
-
+        resourceIds = [workspace_id]
         visualization = "timechart"
-
         size = 0
-
         noDataMessage = "No dependency telemetry was returned for the last 24 hours."
       }
     },
@@ -113,22 +86,13 @@ ${jsonencode({
 
       content = {
         version = "KqlItem/1.0"
-
         title = "Application exceptions"
-
         query = exception_query
-
-        queryType    = 0
+        queryType = 0
         resourceType = "microsoft.operationalinsights/workspaces"
-
-        resourceIds = [
-          workspace_id
-        ]
-
+        resourceIds = [workspace_id]
         visualization = "timechart"
-
         size = 0
-
         noDataMessage = "No Application Insights exceptions were returned for the last 24 hours."
       }
     },
@@ -139,34 +103,19 @@ ${jsonencode({
 
       content = {
         version = "KqlItem/1.0"
-
         title = "Application custom metrics"
-
         query = metric_query
-
-        queryType    = 0
+        queryType = 0
         resourceType = "microsoft.operationalinsights/workspaces"
-
-        resourceIds = [
-          workspace_id
-        ]
-
+        resourceIds = [workspace_id]
         visualization = "timechart"
-
         size = 0
-
         noDataMessage = "No Application Insights custom metrics were returned for the last 24 hours."
       }
     }
   ]
 
   isLocked = false
-
-  defaultResourceIds = [
-    workspace_id
-  ]
-
-  fallbackResourceIds = [
-    workspace_id
-  ]
+  defaultResourceIds = [workspace_id]
+  fallbackResourceIds = [workspace_id]
 })}

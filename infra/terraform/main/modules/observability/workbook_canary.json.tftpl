@@ -1,0 +1,92 @@
+${jsonencode({
+  "$schema" = "https://github.com/Microsoft/Application-Insights-Workbooks/blob/master/schema/workbook.json"
+  version   = "Notebook/1.0"
+
+  items = [
+    {
+      type = 1
+      name = "title"
+
+      content = {
+        json = format(
+          "# Task API Canary Release\n\n## Environment: %s\n\nMonitor error rate, latency, deployment version, and instance distribution during rollout.",
+          environment
+        )
+      }
+    },
+    {
+      type = 1
+      name = "context"
+
+      content = {
+        json = format(
+          "### Monitoring context\n\n**Application Insights component**  \n`%s`\n\nThe rollout split uses `AppVersion` and `AppRoleInstance`. The deployment pipeline must populate `AppVersion` consistently for a meaningful canary-versus-stable comparison.",
+          application_insights_id
+        )
+      }
+    },
+    {
+      type = 3
+      name = "failure_rate"
+
+      content = {
+        version                 = "KqlItem/1.0"
+        title                   = "Failure rate (last hour)"
+        query                   = failure_rate_query
+        queryType               = 0
+        resourceType            = "microsoft.operationalinsights/workspaces"
+        crossComponentResources = [workspace_id]
+        visualization           = "timechart"
+        size                    = 0
+      }
+    },
+    {
+      type = 3
+      name = "latency"
+
+      content = {
+        version                 = "KqlItem/1.0"
+        title                   = "P95 latency (last hour)"
+        query                   = latency_query
+        queryType               = 0
+        resourceType            = "microsoft.operationalinsights/workspaces"
+        crossComponentResources = [workspace_id]
+        visualization           = "timechart"
+        size                    = 0
+      }
+    },
+    {
+      type = 3
+      name = "instance_split"
+
+      content = {
+        version                 = "KqlItem/1.0"
+        title                   = "Requests by application version and role instance"
+        query                   = instance_split_query
+        queryType               = 0
+        resourceType            = "microsoft.operationalinsights/workspaces"
+        crossComponentResources = [workspace_id]
+        visualization           = "timechart"
+        size                    = 0
+      }
+    },
+    {
+      type = 3
+      name = "exceptions"
+
+      content = {
+        version                 = "KqlItem/1.0"
+        title                   = "Recent exceptions"
+        query                   = exceptions_query
+        queryType               = 0
+        resourceType            = "microsoft.operationalinsights/workspaces"
+        crossComponentResources = [workspace_id]
+        visualization           = "table"
+        size                    = 0
+      }
+    }
+  ]
+
+  isLocked           = false
+  defaultResourceIds = [workspace_id]
+})}

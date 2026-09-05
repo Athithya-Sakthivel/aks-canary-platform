@@ -15,7 +15,8 @@
   "dependencies": {
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "react-router": "8.3.0"
+    "react-router": "8.3.0",
+    "@microsoft/applicationinsights-web": "^3.3.6"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

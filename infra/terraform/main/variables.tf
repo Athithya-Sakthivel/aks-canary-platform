@@ -145,7 +145,6 @@ variable "acr_sku" {
   type        = string
   default     = "Basic"
 }
-
 # ------------------------------------------------------------------------------
 # Observability
 # ------------------------------------------------------------------------------
@@ -153,11 +152,13 @@ variable "acr_sku" {
 variable "alert_email_address" {
   description = "Email address used by the Azure Monitor observability action group."
   type        = string
+  sensitive   = true
+  nullable    = false
 
   validation {
     condition = can(
       regex(
-        "^[^@]+@[^@]+\\.[^@]+$",
+        "^[^@[:space:]]+@[^@[:space:]]+\\.[^@[:space:]]+$",
         trimspace(var.alert_email_address)
       )
     )
@@ -170,21 +171,24 @@ variable "application_insights_sampling_percentage" {
   description = "Server-side Application Insights sampling percentage."
   type        = number
   default     = 100
+  nullable    = false
 
   validation {
     condition = (
-      var.application_insights_sampling_percentage > 0 &&
-      var.application_insights_sampling_percentage <= 100
+      var.application_insights_sampling_percentage >= 1 &&
+      var.application_insights_sampling_percentage <= 100 &&
+      floor(var.application_insights_sampling_percentage) == var.application_insights_sampling_percentage
     )
 
-    error_message = "application_insights_sampling_percentage must be between 1 and 100."
+    error_message = "application_insights_sampling_percentage must be an integer between 1 and 100."
   }
 }
 
 variable "log_analytics_retention_days" {
-  description = "Log Analytics retention period in days."
+  description = "Default Log Analytics workspace analytics retention period in days."
   type        = number
   default     = 30
+  nullable    = false
 
   validation {
     condition = (
@@ -198,33 +202,101 @@ variable "log_analytics_retention_days" {
 }
 
 variable "enable_cpu_alert" {
-  description = "Enable AKS node CPU alert."
+  description = "Enable the AKS node CPU alert."
   type        = bool
   default     = true
+  nullable    = false
 }
 
 variable "enable_memory_alert" {
-  description = "Enable AKS node memory alert."
+  description = "Enable the AKS node memory alert."
   type        = bool
   default     = true
+  nullable    = false
 }
 
 variable "enable_pod_restarts_alert" {
-  description = "Enable pod restart scheduled query alert."
+  description = "Enable the pod restart scheduled query alert."
   type        = bool
   default     = true
+  nullable    = false
 }
 
 variable "enable_failed_requests_alert" {
-  description = "Enable Application Insights failed request rate alert."
+  description = "Enable the Application Insights failed-request alert."
   type        = bool
   default     = true
+  nullable    = false
 }
 
 variable "enable_postgres_storage_alert" {
-  description = "Enable PostgreSQL storage alert."
+  description = "Enable the PostgreSQL storage percentage alert."
   type        = bool
   default     = false
+  nullable    = false
+}
+
+variable "enable_aks_diagnostics" {
+  description = "Enable Azure Monitor diagnostics for AKS control-plane logs and metrics."
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
+variable "enable_postgresql_diagnostics" {
+  description = "Enable Azure Monitor diagnostics for PostgreSQL Flexible Server logs and metrics."
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
+variable "enable_app_slo_workbook" {
+  description = "Enable the Application SLO workbook."
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
+variable "enable_infra_workbook" {
+  description = "Enable the Infrastructure workbook."
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
+variable "enable_database_workbook" {
+  description = "Enable the Database workbook."
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
+variable "enable_canary_workbook" {
+  description = "Enable the Canary Release workbook."
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
+variable "enable_burn_rate_fast_alert" {
+  description = "Enable the fast error-budget burn-rate scheduled query alert using a 5-minute evaluation window."
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
+variable "enable_burn_rate_slow_alert" {
+  description = "Enable the slow error-budget burn-rate scheduled query alert using a 1-hour evaluation window."
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
+variable "enable_postgres_cpu_alert" {
+  description = "Enable the PostgreSQL Flexible Server CPU metric alert. Requires postgresql_server_id to be non-null."
+  type        = bool
+  default     = true
+  nullable    = false
 }
 
 # ------------------------------------------------------------------------------

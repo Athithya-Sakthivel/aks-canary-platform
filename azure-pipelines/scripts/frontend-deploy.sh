@@ -186,32 +186,148 @@ metadata:
   namespace: $NAMESPACE
 data:
   nginx.conf: |
-    server {
-        listen 8080;
-        server_name _;
-        root /usr/share/nginx/html;
-        index index.html;
+    worker_processes auto;
+    pid /tmp/nginx.pid;
 
-        # Proxy API requests to backend stable service
-        location /api/ {
-            proxy_pass http://backend-stable:8080;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade \$http_upgrade;
-            proxy_set_header Connection 'upgrade';
-            proxy_set_header Host \$host;
-            proxy_cache_bypass \$http_upgrade;
-            proxy_set_header X-Real-IP \$remote_addr;
-            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto \$scheme;
-        }
+    events {
+        worker_connections 1024;
+    }
 
-        location /health {
-            return 200 'OK';
-            add_header Content-Type text/plain;
-        }
+    http {
+        include       /etc/nginx/mime.types;
+        default_type  application/octet-stream;
 
-        location / {
-            try_files \$uri \$uri/ /index.html;
+        # Kubernetes DNS resolver for dynamic service discovery
+        resolver kube-dns.kube-system.svc.cluster.local valid=30s ipv6=off;
+
+        sendfile on;
+        tcp_nopush on;
+        tcp_nodelay on;
+        keepalive_timeout 65s;
+
+        client_max_body_size 2m;
+        server_tokens off;
+
+        gzip on;
+        gzip_vary on;
+        gzip_comp_level 5;
+        gzip_min_length 1024;
+        gzip_proxied any;
+        gzip_types
+            application/javascript
+            application/json
+            text/css
+            text/plain;
+
+        # Writable temp paths for unprivileged user (UID 101)
+        proxy_temp_path /tmp/proxy_temp;
+        client_body_temp_path /tmp/client_temp;
+
+        server {
+            listen 8080 default_server;
+            server_name _;
+
+            root /usr/share/nginx/html;
+            index index.html;
+
+            # Basic security headers
+            add_header X-Content-Type-Options "nosniff" always;
+            add_header X-Frame-Options "DENY" always;
+            add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+            # ------------------------------------------------------------------
+            # Runtime configuration endpoint for Application Insights
+            # ------------------------------------------------------------------
+            location = /config.js {
+                access_log off;
+                default_type application/javascript;
+                return 200 "window.APPINSIGHTS_CONNECTION_STRING = '\${APPLICATIONINSIGHTS_CONNECTION_STRING}';";
+            }
+
+            # ------------------------------------------------------------------
+            # Frontend health endpoint for container healthcheck
+            # ------------------------------------------------------------------
+            location = /health {
+                access_log off;
+                default_type text/plain;
+                return 200 "OK\n";
+            }
+
+            # ------------------------------------------------------------------
+            # Proxy API requests to backend using dynamic DNS resolution
+            # ------------------------------------------------------------------
+            location ^~ /api/ {
+                set \$backend_upstream http://backend-stable:8080;
+                proxy_pass \$backend_upstream;
+
+                proxy_http_version 1.1;
+                proxy_set_header Host \$host;
+                proxy_set_header X-Real-IP \$remote_addr;
+                proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto \$scheme;
+                proxy_set_header X-Forwarded-Host \$host;
+                proxy_set_header X-Forwarded-Port \$server_port;
+                proxy_set_header Connection "";
+
+                proxy_connect_timeout 5s;
+                proxy_send_timeout 30s;
+                proxy_read_timeout 60s;
+            }
+
+            # ------------------------------------------------------------------
+            # Proxy Actuator health endpoints (liveness/readiness)
+            # ------------------------------------------------------------------
+            location = /actuator/health {
+                set \$backend_upstream http://backend-stable:8080;
+                proxy_pass \$backend_upstream;
+
+                proxy_http_version 1.1;
+                proxy_set_header Host \$host;
+                proxy_set_header X-Real-IP \$remote_addr;
+                proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto \$scheme;
+                proxy_set_header Connection "";
+
+                proxy_connect_timeout 2s;
+                proxy_send_timeout 5s;
+                proxy_read_timeout 5s;
+            }
+
+            location ^~ /actuator/health/ {
+                set \$backend_upstream http://backend-stable:8080;
+                proxy_pass \$backend_upstream;
+
+                proxy_http_version 1.1;
+                proxy_set_header Host \$host;
+                proxy_set_header X-Real-IP \$remote_addr;
+                proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto \$scheme;
+                proxy_set_header Connection "";
+
+                proxy_connect_timeout 2s;
+                proxy_send_timeout 5s;
+                proxy_read_timeout 5s;
+            }
+
+            # ------------------------------------------------------------------
+            # Static assets and SPA fallback
+            # ------------------------------------------------------------------
+            # index.html should not be cached (so updates are visible)
+            location = /index.html {
+                expires -1;
+                try_files \$uri =404;
+            }
+
+            # CSS/JS also no-cache in dev (or use content hashes in prod)
+            location ~* \.(?:css|js)$ {
+                expires -1;
+                try_files \$uri =404;
+            }
+
+            # SPA client-side routing: fallback to index.html for unknown paths
+            location / {
+                try_files \$uri \$uri/ /index.html;
+            }
         }
     }
 EOF
@@ -309,6 +425,13 @@ spec:
       containers:
         - name: $CONTAINER
           image: $IMAGE_REPO:$STABLE_TAG
+          env:
+            - name: APPLICATIONINSIGHTS_CONNECTION_STRING
+              valueFrom:
+                secretKeyRef:
+                  name: frontend-secrets
+                  key: APPLICATIONINSIGHTS_CONNECTION_STRING
+                  
           ports:
             - containerPort: $PORT
           volumeMounts:
