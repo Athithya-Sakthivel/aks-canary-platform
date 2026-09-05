@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
 # ==============================================================================
 # local/deploy-postgres.sh – Deploy local PostgreSQL for kind and ensure
-# backend-secrets are set to local database values with REAL Azure App Insights.
+# backend-secrets and frontend-secrets match the AKS/ESO pattern.
+#
+# For kind (local development):
+#   - backend-secrets:  local database + real Application Insights
+#   - frontend-secrets: real Application Insights
+#
+# For AKS (production):
+#   - External Secrets Operator syncs both Secrets from Azure Key Vault
 #
 # This script:
-#   1. Deletes any existing ExternalSecret `backend-secrets` to prevent ESO
-#      from overwriting our local secret.
+#   1. Deletes any existing ExternalSecrets to prevent ESO from overwriting
+#      local Secrets.
 #   2. Fetches the real Application Insights connection string from Azure Key Vault.
-#   3. Creates/patches the Kubernetes Secret `backend-secrets` with:
-#      - Local DatabaseUrl (points to in-cluster PostgreSQL)
-#      - Local database credentials
-#      - Random JWT secret
-#      - REAL Application Insights connection string (for observability)
-#   4. Deploys a local PostgreSQL Deployment + Service + PVC using the same
-#      credentials.
+#   3. Creates/patches Kubernetes Secrets `backend-secrets` and `frontend-secrets`.
+#   4. Deploys a local PostgreSQL Deployment + Service + PVC.
 #
 # Idempotent – safe to run multiple times.
 # ==============================================================================
@@ -39,19 +41,19 @@ fetch_app_insights_connection_string() {
   # Try Azure CLI if available
   if command -v az >/dev/null 2>&1; then
     subscription_id="$(az account show --query id -o tsv 2>/dev/null || true)"
-    
+
     if [[ -n "$subscription_id" ]]; then
       suffix="${subscription_id: -6}"
       kv_name="kv-azdo-bootstrap-${suffix}"
-      
+
       log "Fetching Application Insights connection string from Key Vault: $kv_name"
-      
+
       conn_str="$(az keyvault secret show \
         --vault-name "$kv_name" \
         --name "ApplicationInsightsConnectionString" \
         --query value \
         -o tsv 2>/dev/null || true)"
-      
+
       if [[ -n "$conn_str" && "$conn_str" != "null" ]]; then
         log "Successfully fetched real Application Insights connection string"
         echo "$conn_str"
@@ -59,7 +61,7 @@ fetch_app_insights_connection_string() {
       fi
     fi
   fi
-  
+
   # Fallback: use dummy connection string (telemetry will be lost)
   log "WARNING: Could not fetch real Application Insights connection string"
   log "WARNING: Using dummy connection string (no telemetry will be exported)"
@@ -72,23 +74,30 @@ fetch_app_insights_connection_string() {
 kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
 
 # ------------------------------------------------------------------------------
-# 2. Remove any existing ExternalSecret that would overwrite our local secret
+# 2. Remove existing ExternalSecrets to prevent ESO from overwriting local Secrets
 # ------------------------------------------------------------------------------
-log "Removing external secret (if any) to prevent Azure sync..."
-kubectl delete externalsecret backend-secrets -n "$NAMESPACE" --ignore-not-found=true
+log "Removing ExternalSecrets (if any) to prevent Azure sync..."
+
+for es in backend-secrets frontend-secrets; do
+  kubectl delete externalsecret "$es" -n "$NAMESPACE" --ignore-not-found=true
+done
 
 # Wait for ExternalSecret cleanup to complete (prevents race condition)
-kubectl wait --for=delete externalsecret/backend-secrets -n "$NAMESPACE" --timeout=30s 2>/dev/null || true
+for es in backend-secrets frontend-secrets; do
+  kubectl wait --for=delete "externalsecret/$es" -n "$NAMESPACE" --timeout=30s 2>/dev/null || true
+done
 
 # ------------------------------------------------------------------------------
-# 3. Create/update the backend-secrets Secret with local database + real AI
+# 3. Fetch Application Insights connection string once
 # ------------------------------------------------------------------------------
+APPINSIGHTS_CS="$(fetch_app_insights_connection_string)"
+
 # Generate a random JWT secret if not provided
 JWT_SECRET="${JWT_SECRET:-$(openssl rand -base64 64)}"
 
-# Fetch real Application Insights connection string
-APPINSIGHTS_CS="$(fetch_app_insights_connection_string)"
-
+# ------------------------------------------------------------------------------
+# 4. Create/update backend-secrets (local database + real Application Insights)
+# ------------------------------------------------------------------------------
 log "Creating backend-secrets with local database + real Application Insights..."
 
 kubectl apply -f - <<EOF
@@ -109,20 +118,27 @@ stringData:
   APPLICATIONINSIGHTS_CONNECTION_STRING: "$APPINSIGHTS_CS"
 EOF
 
-
-# After creating backend-secrets
-APPINSIGHTS_CS="$(az keyvault secret show \
-  --vault-name "kv-azdo-bootstrap-${SUFFIX}" \
-  --name "ApplicationInsightsConnectionString" \
-  --query value -o tsv)"
-
-kubectl create secret generic frontend-secrets \
-  --namespace task-api \
-  --from-literal=APPLICATIONINSIGHTS_CONNECTION_STRING="$APPINSIGHTS_CS" \
-  --dry-run=client -o yaml | kubectl apply -f -
-  
 # ------------------------------------------------------------------------------
-# 4. Deploy local PostgreSQL
+# 5. Create/update frontend-secrets (real Application Insights)
+# ------------------------------------------------------------------------------
+log "Creating frontend-secrets with real Application Insights..."
+
+kubectl apply -f - <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: frontend-secrets
+  namespace: $NAMESPACE
+  labels:
+    app: frontend
+    managed-by: deploy-postgres-script
+type: Opaque
+stringData:
+  APPLICATIONINSIGHTS_CONNECTION_STRING: "$APPINSIGHTS_CS"
+EOF
+
+# ------------------------------------------------------------------------------
+# 6. Deploy local PostgreSQL
 # ------------------------------------------------------------------------------
 log "Deploying local PostgreSQL..."
 
@@ -210,10 +226,15 @@ EOF
 log "Waiting for PostgreSQL to be ready..."
 kubectl rollout status deployment/postgres -n "$NAMESPACE" --timeout=180s
 
-log "Local PostgreSQL deployed successfully."
-log "Backend-secrets now contain:"
-log "  - Local DatabaseUrl: jdbc:postgresql://postgres:5432/$POSTGRES_DB"
-log "  - Real Application Insights connection string: ${APPINSIGHTS_CS:0:50}..."
+# ------------------------------------------------------------------------------
+# 7. Final summary
+# ------------------------------------------------------------------------------
+log "Local deployment complete."
+log ""
+log "Secrets created/updated:"
+log "  - backend-secrets (local database + real App Insights)"
+log "  - frontend-secrets (real App Insights)"
 log ""
 log "Verify with:"
 log "  kubectl get secret backend-secrets -n $NAMESPACE -o jsonpath='{.data.APPLICATIONINSIGHTS_CONNECTION_STRING}' | base64 -d"
+log "  kubectl get secret frontend-secrets -n $NAMESPACE -o jsonpath='{.data.APPLICATIONINSIGHTS_CONNECTION_STRING}' | base64 -d"

@@ -9,10 +9,10 @@ import org.springframework.context.annotation.Configuration;
 /**
  * Central definition of application business metrics.
  *
- * <p>The Spring-managed MeterRegistry is used so the meters participate in the
- * application's configured Micrometer/Actuator registry. With Application
- * Insights Java 3.x autocollection enabled, Micrometer and Spring Boot Actuator
- * metrics are collected by the Application Insights agent.
+ * <p>The Spring-managed MeterRegistry is used so the meters participate in the application's
+ * configured Micrometer/Actuator registry. With Application Insights Java 3.x autocollection
+ * enabled, Micrometer and Spring Boot Actuator metrics are collected by the Application Insights
+ * agent.
  *
  * <p>Metric names intentionally retain the existing dashboard contract.
  */

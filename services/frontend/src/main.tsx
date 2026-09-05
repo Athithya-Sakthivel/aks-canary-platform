@@ -1,47 +1,61 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { BrowserRouter } from "react-router";
 import { ApplicationInsights } from "@microsoft/applicationinsights-web";
 import App from "./App";
 import "./styles.css";
+import "./types";
 
-// Read connection string from window global (set by config.js at runtime)
-const connectionString =
-  (window as any).APPINSIGHTS_CONNECTION_STRING ||
-  "InstrumentationKey=00000000-0000-0000-0000-000000000000;IngestionEndpoint=https://localhost;LiveEndpoint=https://localhost";
+function createApplicationInsights(): ApplicationInsights | undefined {
+  const connectionString = window.APPINSIGHTS_CONNECTION_STRING?.trim();
 
-const appInsights = new ApplicationInsights({
-  config: {
-    connectionString,
-    enableAutoRouteTracking: false, // Manual tracking in App.tsx
-    enableCorsCorrelation: true,
-    enableRequestHeaderTracking: true,
-    enableResponseHeaderTracking: true,
-  },
-});
+  if (!connectionString) {
+    console.warn(
+      "Application Insights is disabled: APPINSIGHTS_CONNECTION_STRING is not configured.",
+    );
+    return undefined;
+  }
 
-appInsights.loadAppInsights();
-appInsights.trackPageView();
+  if (!/^InstrumentationKey=[^;]+(?:;.*)?$/i.test(connectionString)) {
+    console.error(
+      "Application Insights is disabled: APPINSIGHTS_CONNECTION_STRING does not look like a valid Azure Application Insights connection string.",
+    );
+    return undefined;
+  }
 
-// Global error tracking
-window.addEventListener("error", (event) => {
-  appInsights.trackException({
-    exception: event.error || new Error(event.message),
-    severityLevel: 3,
+  const appInsights = new ApplicationInsights({
+    config: {
+      connectionString,
+      enableAutoRouteTracking: true,
+      enableCorsCorrelation: true,
+
+      // Do not collect HTTP headers by default. In particular, keep
+      // authentication-related headers out of telemetry.
+      enableRequestHeaderTracking: false,
+      enableResponseHeaderTracking: false,
+    },
   });
-});
 
-window.addEventListener("unhandledrejection", (event) => {
-  appInsights.trackException({
-    exception: new Error(`Unhandled promise rejection: ${event.reason}`),
-    severityLevel: 3,
-  });
-});
+  appInsights.loadAppInsights();
+  appInsights.trackPageView();
 
-// Expose appInsights for route tracking in App.tsx
-(window as any).appInsights = appInsights;
+  return appInsights;
+}
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
+const appInsights = createApplicationInsights();
+
+window.appInsights = appInsights;
+
+const rootElement = document.getElementById("root");
+
+if (!rootElement) {
+  throw new Error('Required root element "#root" was not found.');
+}
+
+ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
-    <App />
-  </React.StrictMode>
+    <BrowserRouter>
+      <App />
+    </BrowserRouter>
+  </React.StrictMode>,
 );

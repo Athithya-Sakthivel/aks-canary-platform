@@ -1,38 +1,83 @@
+# syntax=docker/dockerfile:1
+
+# ---------------------------------------------------------------------------
 # Build stage
-FROM docker.io/library/maven:3.9.9-eclipse-temurin-21-alpine@sha256:5a8b906c4faa11d33f6c74758f67db8eac25441e14b0729f6d50ff78992be58a AS builder
+# ---------------------------------------------------------------------------
+FROM maven:3.9.16-eclipse-temurin-21-alpine AS build
 
 WORKDIR /build
 
-COPY pom.xml .
-RUN mvn dependency:go-offline
+# Copy only dependency descriptors first to maximize Docker layer caching.
+COPY pom.xml ./
 
+# Download dependencies using BuildKit's persistent Maven cache.
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -B -DskipTests dependency:go-offline
+
+# Copy source only after dependencies have been cached.
 COPY src ./src
-RUN mvn clean package -DskipTests
 
+# Build the application.
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -B -DskipTests clean package
+
+# ---------------------------------------------------------------------------
 # Runtime stage
-FROM docker.io/library/eclipse-temurin:21-jre-alpine@sha256:974b08960c5d96694c780e65b2d5705268ab1e1ca1a0dd0caf4ba6c3fe34d699
+# ---------------------------------------------------------------------------
+FROM eclipse-temurin:21-jre-alpine
 
-# Install curl for health checks (optional)
-RUN apk add --no-cache curl
+ARG APPINSIGHTS_AGENT_VERSION=3.7.9
 
-# Application Insights Java agent version
-ENV APPINSIGHTS_AGENT_VERSION=3.7.9
-
-# Download Application Insights agent
-RUN wget -O /opt/applicationinsights-agent.jar \
-    "https://github.com/microsoft/ApplicationInsights-Java/releases/download/${APPINSIGHTS_AGENT_VERSION}/applicationinsights-agent-${APPINSIGHTS_AGENT_VERSION}.jar"
+ENV APPINSIGHTS_AGENT_VERSION="${APPINSIGHTS_AGENT_VERSION}" \
+    APPINSIGHTS_AGENT_SHA256="4ab7a442bf9defc7475d026c6b49042793ebb010c391a1db91ae07da0c04d848"
 
 WORKDIR /app
 
-COPY --from=builder /build/target/*.jar app.jar
+# curl is needed for the agent download and container health check.
+RUN apk add --no-cache curl \
+    && mkdir -p /opt/appinsights
 
-# Create non-root user
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+# Download the Application Insights Java agent and verify its checksum.
+RUN set -eux; \
+    agent_url="https://github.com/microsoft/ApplicationInsights-Java/releases/download/${APPINSIGHTS_AGENT_VERSION}/applicationinsights-agent-${APPINSIGHTS_AGENT_VERSION}.jar"; \
+    curl \
+        --fail \
+        --silent \
+        --show-error \
+        --location \
+        --retry 5 \
+        --retry-delay 2 \
+        --retry-all-errors \
+        --connect-timeout 30 \
+        --max-time 300 \
+        --output /opt/appinsights/applicationinsights-agent.jar \
+        "${agent_url}"; \
+    printf '%s  %s\n' \
+        "${APPINSIGHTS_AGENT_SHA256}" \
+        /opt/appinsights/applicationinsights-agent.jar \
+        | sha256sum -c -; \
+    test -s /opt/appinsights/applicationinsights-agent.jar
+
+# Copy the application artifact from the build stage.
+COPY --from=build /build/target/*.jar /app/app.jar
+
+# Create a dedicated non-root user.
+RUN addgroup -S appgroup \
+    && adduser -S -D -H -G appgroup appuser \
+    && chown -R appuser:appgroup /app /opt/appinsights
+
 USER appuser
 
-# Health check using actuator
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s \
-  CMD curl -f http://localhost:8080/actuator/health || exit 1
+EXPOSE 8080
 
-# Run with Application Insights Java agent
-ENTRYPOINT ["java", "-javaagent:/opt/applicationinsights-agent.jar", "-jar", "/app/app.jar"]
+# Spring Boot actuator health endpoint.
+HEALTHCHECK --interval=30s \
+    --timeout=5s \
+    --start-period=60s \
+    --retries=3 \
+    CMD curl --fail --silent --show-error \
+        http://127.0.0.1:8080/actuator/health \
+        >/dev/null || exit 1
+
+# Microsoft documents the exec-form Java agent configuration for containers.
+ENTRYPOINT ["java", "-javaagent:/opt/appinsights/applicationinsights-agent.jar", "-jar", "/app/app.jar"]

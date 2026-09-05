@@ -161,5 +161,5 @@ function formatStatus(status: Task["status"]): string {
   return status
     .toLowerCase()
     .replace(/_/g, " ")
-    .replace(/\b\w/g, (character) => character.toUpperCase());
+    .replace(/\b\w/g, (character: string) => character.toUpperCase());
 }

@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
+set -Eeuo pipefail
+IFS=$'\n\t'
 
 # =============================================================================
 # Local full-stack runner: PostgreSQL + Backend + Frontend
 #
-# Uses a dedicated Spring profile "local" that disables Azure Key Vault.
-# Secrets are passed directly via environment variables.
+# Uses environment variables for all application secrets. Azure Key Vault is
+# accessed only for the Application Insights connection string; if unavailable,
+# a dummy value is used so local functional testing can still proceed.
 # =============================================================================
 
 NETWORK="task-api-network"
@@ -22,21 +25,46 @@ FRONTEND_IMAGE="task-api-frontend:local"
 BACKEND_PORT=8080
 FRONTEND_PORT=8081
 
-KV="az-temp-kv-101"
-RG="temp-az-1930"
+log()   { echo "[$(date '+%H:%M:%S')] $*"; }
+fail()  { echo "ERROR: $*" >&2; exit 1; }
 
-log()  { echo "[$(date '+%H:%M:%S')] $*"; }
-fail() { echo "ERROR: $*" >&2; exit 1; }
+# -----------------------------------------------------------------------------
+# 0. Dynamic Azure Key Vault / connection string resolution
+# -----------------------------------------------------------------------------
+SUBSCRIPTION_ID="$(az account show --query id -o tsv 2>/dev/null || true)"
+if [[ -n "$SUBSCRIPTION_ID" && "$SUBSCRIPTION_ID" != "null" ]]; then
+  SUFFIX="${SUBSCRIPTION_ID: -6}"
+  KV="kv-azdo-bootstrap-${SUFFIX}"
+  log "Fetching Application Insights connection string from Key Vault: ${KV}"
+  APPINSIGHTS_CONN_STR="$(az keyvault secret show \
+    --vault-name "$KV" \
+    --name ApplicationInsightsConnectionString \
+    --query value \
+    -o tsv 2>/dev/null || true)"
+else
+  APPINSIGHTS_CONN_STR=""
+fi
 
+if [[ -z "$APPINSIGHTS_CONN_STR" || "$APPINSIGHTS_CONN_STR" == "null" ]]; then
+  log "WARNING: No real Application Insights connection string available. Using dummy value."
+  APPINSIGHTS_CONN_STR="InstrumentationKey=00000000-0000-0000-0000-000000000000;IngestionEndpoint=https://localhost;LiveEndpoint=https://localhost"
+fi
+
+# -----------------------------------------------------------------------------
 # 1. Ensure Docker network
+# -----------------------------------------------------------------------------
 log "Ensuring Docker network '$NETWORK'..."
 docker network inspect "$NETWORK" >/dev/null 2>&1 || docker network create "$NETWORK"
 
+# -----------------------------------------------------------------------------
 # 2. Cleanup old containers
+# -----------------------------------------------------------------------------
 log "Cleaning up old containers..."
 docker rm -f "$DB_CONTAINER" "$BACKEND_CONTAINER" "$FRONTEND_CONTAINER" >/dev/null 2>&1 || true
 
+# -----------------------------------------------------------------------------
 # 3. Start PostgreSQL
+# -----------------------------------------------------------------------------
 log "Starting PostgreSQL..."
 docker run -d \
   --name "$DB_CONTAINER" \
@@ -46,18 +74,22 @@ docker run -d \
   -e POSTGRES_PASSWORD="$DB_PASSWORD" \
   "$POSTGRES_IMAGE" >/dev/null
 
-# 4. Get Application Insights connection string from Key Vault (optional, only for telemetry)
-log "Fetching Application Insights connection string from Key Vault..."
-APPINSIGHTS_CONN_STR="$(az keyvault secret show --vault-name "$KV" --name ApplicationInsightsConnectionString --query value -o tsv 2>/dev/null || echo '')"
+# -----------------------------------------------------------------------------
+# 4. Build images (fail on any build error)
+# -----------------------------------------------------------------------------
+log "Building backend image (--no-cache)..."
+docker build -t "$BACKEND_IMAGE" \
+  -f services/backend/Dockerfile \
+  services/backend/
 
-# 5. Build images
-log "Building backend image..."
-docker build -t "$BACKEND_IMAGE" -f services/backend/Dockerfile services/backend/
+log "Building frontend image (--no-cache)..."
+docker build -t "$FRONTEND_IMAGE" \
+  -f services/frontend/Dockerfile.local \
+  services/frontend/
 
-log "Building frontend image..."
-docker build -t "$FRONTEND_IMAGE" -f services/frontend/Dockerfile.local services/frontend/
-
-# 6. Run backend with local profile
+# -----------------------------------------------------------------------------
+# 5. Run backend
+# -----------------------------------------------------------------------------
 log "Starting backend container..."
 docker run -d \
   --name "$BACKEND_CONTAINER" \
@@ -74,7 +106,9 @@ docker run -d \
   -e APPLICATIONINSIGHTS_SAMPLING_PERCENTAGE=100 \
   "$BACKEND_IMAGE" >/dev/null
 
-# 7. Run frontend
+# -----------------------------------------------------------------------------
+# 6. Run frontend
+# -----------------------------------------------------------------------------
 log "Starting frontend container..."
 docker run -d \
   --name "$FRONTEND_CONTAINER" \
@@ -83,7 +117,9 @@ docker run -d \
   -e APPLICATIONINSIGHTS_CONNECTION_STRING="$APPINSIGHTS_CONN_STR" \
   "$FRONTEND_IMAGE" >/dev/null
 
-# 8. Wait for backend health
+# -----------------------------------------------------------------------------
+# 7. Wait for backend health
+# -----------------------------------------------------------------------------
 log "Waiting for backend health..."
 for i in {1..30}; do
   if curl -fsS "http://localhost:$BACKEND_PORT/actuator/health" >/dev/null 2>&1; then
@@ -97,7 +133,9 @@ for i in {1..30}; do
   fi
 done
 
-# 9. Wait for frontend
+# -----------------------------------------------------------------------------
+# 8. Wait for frontend
+# -----------------------------------------------------------------------------
 log "Waiting for frontend..."
 for i in {1..15}; do
   if curl -fsS "http://localhost:$FRONTEND_PORT/health" >/dev/null 2>&1; then
@@ -111,7 +149,9 @@ for i in {1..15}; do
   fi
 done
 
-# 10. Print URLs
+# -----------------------------------------------------------------------------
+# 9. Print URLs
+# -----------------------------------------------------------------------------
 echo ""
 log "Application running:"
 echo "  Frontend: http://localhost:$FRONTEND_PORT"

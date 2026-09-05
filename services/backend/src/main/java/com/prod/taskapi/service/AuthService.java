@@ -65,18 +65,12 @@ public class AuthService {
     userRepository.save(user);
 
     String token =
-        jwtService.generateToken(
-            user.getId(),
-            user.getUsername(),
-            user.getRole().name());
+        jwtService.generateToken(user.getId(), user.getUsername(), user.getRole().name());
 
     authSuccessCounter.increment();
     log.info("Registration successful");
 
-    return new JwtResponse(
-        token,
-        user.getUsername(),
-        user.getRole().name());
+    return new JwtResponse(token, user.getUsername(), user.getRole().name());
   }
 
   @Transactional(readOnly = true)
@@ -100,17 +94,11 @@ public class AuthService {
     }
 
     String token =
-        jwtService.generateToken(
-            user.getId(),
-            user.getUsername(),
-            user.getRole().name());
+        jwtService.generateToken(user.getId(), user.getUsername(), user.getRole().name());
 
     authSuccessCounter.increment();
     log.info("Login successful");
 
-    return new JwtResponse(
-        token,
-        user.getUsername(),
-        user.getRole().name());
+    return new JwtResponse(token, user.getUsername(), user.getRole().name());
   }
 }

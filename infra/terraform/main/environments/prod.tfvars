@@ -4,7 +4,7 @@
 # NOTE: This file is illustrative. It demonstrates what a production deployment
 #       would use in a real Azure subscription with adequate quota and budget.
 #       The current subscription (Azure for Students) cannot provision these
-#       resources due to vCPU quota limits. 
+#       resources due to vCPU quota limits.
 # ==============================================================================
 
 environment = "prod"

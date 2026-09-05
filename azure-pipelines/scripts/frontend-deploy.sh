@@ -182,31 +182,20 @@ ensure_configmap() {
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: frontend-config
+  name: frontend-nginx-config
   namespace: $NAMESPACE
 data:
-  nginx.conf: |
-    worker_processes auto;
-    pid /tmp/nginx.pid;
+  default.conf.template: |
+    server {
+        listen 8080 default_server;
+        server_name _;
 
-    events {
-        worker_connections 1024;
-    }
+        root /usr/share/nginx/html;
+        index index.html;
 
-    http {
-        include       /etc/nginx/mime.types;
-        default_type  application/octet-stream;
-
-        # Kubernetes DNS resolver for dynamic service discovery
-        resolver kube-dns.kube-system.svc.cluster.local valid=30s ipv6=off;
-
-        sendfile on;
-        tcp_nopush on;
-        tcp_nodelay on;
-        keepalive_timeout 65s;
-
-        client_max_body_size 2m;
-        server_tokens off;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
         gzip on;
         gzip_vary on;
@@ -216,122 +205,91 @@ data:
         gzip_types
             application/javascript
             application/json
+            image/svg+xml
             text/css
             text/plain;
 
-        # Writable temp paths for unprivileged user (UID 101)
-        proxy_temp_path /tmp/proxy_temp;
-        client_body_temp_path /tmp/client_temp;
+        location = /config.js {
+            access_log off;
+            default_type application/javascript;
+            add_header Cache-Control "no-store, no-cache, must-revalidate" always;
 
-        server {
-            listen 8080 default_server;
-            server_name _;
+            return 200 "window.APPINSIGHTS_CONNECTION_STRING = '\${APPLICATIONINSIGHTS_CONNECTION_STRING}';\n";
+        }
 
-            root /usr/share/nginx/html;
-            index index.html;
+        location = /health {
+            access_log off;
+            default_type text/plain;
+            add_header Cache-Control "no-store" always;
 
-            # Basic security headers
-            add_header X-Content-Type-Options "nosniff" always;
-            add_header X-Frame-Options "DENY" always;
-            add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+            return 200 "OK\n";
+        }
 
-            # ------------------------------------------------------------------
-            # Runtime configuration endpoint for Application Insights
-            # ------------------------------------------------------------------
-            location = /config.js {
-                access_log off;
-                default_type application/javascript;
-                return 200 "window.APPINSIGHTS_CONNECTION_STRING = '\${APPLICATIONINSIGHTS_CONNECTION_STRING}';";
-            }
+        location ^~ /api/ {
+            proxy_pass http://backend-stable:8080;
 
-            # ------------------------------------------------------------------
-            # Frontend health endpoint for container healthcheck
-            # ------------------------------------------------------------------
-            location = /health {
-                access_log off;
-                default_type text/plain;
-                return 200 "OK\n";
-            }
+            proxy_http_version 1.1;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+            proxy_set_header X-Forwarded-Host \$host;
+            proxy_set_header Connection "";
 
-            # ------------------------------------------------------------------
-            # Proxy API requests to backend using dynamic DNS resolution
-            # ------------------------------------------------------------------
-            location ^~ /api/ {
-                set \$backend_upstream http://backend-stable:8080;
-                proxy_pass \$backend_upstream;
+            proxy_connect_timeout 5s;
+            proxy_send_timeout 30s;
+            proxy_read_timeout 60s;
+        }
 
-                proxy_http_version 1.1;
-                proxy_set_header Host \$host;
-                proxy_set_header X-Real-IP \$remote_addr;
-                proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto \$scheme;
-                proxy_set_header X-Forwarded-Host \$host;
-                proxy_set_header X-Forwarded-Port \$server_port;
-                proxy_set_header Connection "";
+        location = /actuator/health {
+            proxy_pass http://backend-stable:8080;
 
-                proxy_connect_timeout 5s;
-                proxy_send_timeout 30s;
-                proxy_read_timeout 60s;
-            }
+            proxy_http_version 1.1;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+            proxy_set_header Connection "";
 
-            # ------------------------------------------------------------------
-            # Proxy Actuator health endpoints (liveness/readiness)
-            # ------------------------------------------------------------------
-            location = /actuator/health {
-                set \$backend_upstream http://backend-stable:8080;
-                proxy_pass \$backend_upstream;
+            proxy_connect_timeout 2s;
+            proxy_send_timeout 5s;
+            proxy_read_timeout 5s;
+        }
 
-                proxy_http_version 1.1;
-                proxy_set_header Host \$host;
-                proxy_set_header X-Real-IP \$remote_addr;
-                proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto \$scheme;
-                proxy_set_header Connection "";
+        location ^~ /actuator/health/ {
+            proxy_pass http://backend-stable:8080;
 
-                proxy_connect_timeout 2s;
-                proxy_send_timeout 5s;
-                proxy_read_timeout 5s;
-            }
+            proxy_http_version 1.1;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+            proxy_set_header Connection "";
 
-            location ^~ /actuator/health/ {
-                set \$backend_upstream http://backend-stable:8080;
-                proxy_pass \$backend_upstream;
+            proxy_connect_timeout 2s;
+            proxy_send_timeout 5s;
+            proxy_read_timeout 5s;
+        }
 
-                proxy_http_version 1.1;
-                proxy_set_header Host \$host;
-                proxy_set_header X-Real-IP \$remote_addr;
-                proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                proxy_set_header X-Forwarded-Proto \$scheme;
-                proxy_set_header Connection "";
+        location = /index.html {
+            expires -1;
+            add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+            try_files \$uri =404;
+        }
 
-                proxy_connect_timeout 2s;
-                proxy_send_timeout 5s;
-                proxy_read_timeout 5s;
-            }
+        location ~* \.(?:css|js)$ {
+            expires -1;
+            add_header Cache-Control "no-cache" always;
+            try_files \$uri =404;
+        }
 
-            # ------------------------------------------------------------------
-            # Static assets and SPA fallback
-            # ------------------------------------------------------------------
-            # index.html should not be cached (so updates are visible)
-            location = /index.html {
-                expires -1;
-                try_files \$uri =404;
-            }
-
-            # CSS/JS also no-cache in dev (or use content hashes in prod)
-            location ~* \.(?:css|js)$ {
-                expires -1;
-                try_files \$uri =404;
-            }
-
-            # SPA client-side routing: fallback to index.html for unknown paths
-            location / {
-                try_files \$uri \$uri/ /index.html;
-            }
+        location / {
+            try_files \$uri \$uri/ /index.html;
         }
     }
 EOF
 }
+
 
 ensure_services() {
   write_and_apply "services.yaml" <<EOF
@@ -390,8 +348,8 @@ EOF
   fi
 }
 
+
 ensure_rollout() {
-  # Create if missing; do not wait here.
   if ! kubectl get rollout "$ROLLOUT_NAME" -n "$NAMESPACE" >/dev/null 2>&1; then
     write_and_apply "rollout.yaml" <<EOF
 apiVersion: argoproj.io/v1alpha1
@@ -422,22 +380,30 @@ spec:
       labels:
         app: frontend
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: $CONTAINER
           image: $IMAGE_REPO:$STABLE_TAG
           env:
+            - name: NGINX_ENVSUBST_FILTER
+              value: '^APPLICATIONINSIGHTS_CONNECTION_STRING$'
             - name: APPLICATIONINSIGHTS_CONNECTION_STRING
               valueFrom:
                 secretKeyRef:
                   name: frontend-secrets
                   key: APPLICATIONINSIGHTS_CONNECTION_STRING
-                  
+                  optional: true
           ports:
             - containerPort: $PORT
+              name: http
+              protocol: TCP
           volumeMounts:
             - name: nginx-config
-              mountPath: /etc/nginx/conf.d/default.conf
-              subPath: nginx.conf
+              mountPath: /etc/nginx/templates/default.conf.template
+              subPath: default.conf.template
+              readOnly: true
           resources:
             requests:
               cpu: 50m
@@ -445,18 +411,27 @@ spec:
             limits:
               cpu: 200m
               memory: 128Mi
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /health
-              port: $PORT
-            initialDelaySeconds: 5
-            periodSeconds: 10
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
           livenessProbe:
             httpGet:
               path: /health
-              port: $PORT
-            initialDelaySeconds: 10
-            periodSeconds: 15
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
           securityContext:
             runAsNonRoot: true
             runAsUser: 101
@@ -467,7 +442,10 @@ spec:
       volumes:
         - name: nginx-config
           configMap:
-            name: frontend-config
+            name: frontend-nginx-config
+            items:
+              - key: default.conf.template
+                path: default.conf.template
 EOF
   fi
 }

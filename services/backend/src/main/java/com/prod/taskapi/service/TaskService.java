@@ -40,12 +40,7 @@ public class TaskService {
 
     Status status = request.status() != null ? request.status() : Status.PENDING;
 
-    Task task =
-        new Task(
-            request.title(),
-            request.description(),
-            status,
-            userId);
+    Task task = new Task(request.title(), request.description(), status, userId);
 
     /*
      * Use Timer.record(Supplier) rather than recordCallable().
@@ -65,12 +60,9 @@ public class TaskService {
   public List<TaskResponse> getTasks(Long userId) {
     log.info("Fetching tasks for authenticated user");
 
-    List<Task> tasks =
-        taskFetchTimer.record(() -> taskRepository.findByUserId(userId));
+    List<Task> tasks = taskFetchTimer.record(() -> taskRepository.findByUserId(userId));
 
-    return tasks.stream()
-        .map(this::toResponse)
-        .toList();
+    return tasks.stream().map(this::toResponse).toList();
   }
 
   @Transactional(readOnly = true)

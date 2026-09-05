@@ -179,16 +179,8 @@ pipx ensurepath
 . /etc/profile.d/maven.sh
 export PATH="/root/.local/bin:${PATH}"
 
-# Install pre-commit hooks (check in /workspace, not current directory)
-if [ -f /workspace/.pre-commit-config.yaml ]; then
-    cd /workspace
-    pre-commit install --install-hooks
-else
-    echo "No .pre-commit-config.yaml found in /workspace, skipping hook installation"
-fi
-
-# Return to root directory
 cd /workspace
+pre-commit install --install-hooks
 
 # Install Node.js via nvm
 curl -fsSL https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash

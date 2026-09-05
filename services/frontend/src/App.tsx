@@ -1,42 +1,36 @@
-import { useEffect } from "react";
-import { Navigate, Route, Routes, useLocation } from "react-router";
+import { Navigate, Route, Routes } from "react-router";
 import ProtectedRoute from "./components/ProtectedRoute";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Tasks from "./pages/Tasks";
 
 export default function App() {
-  const location = useLocation();
-
-  useEffect(() => {
-    // Track page view on every route change
-    (window as any).appInsights?.trackPageView({
-      uri: location.pathname,
-      name: location.pathname,
-    });
-  }, [location]);
+  const showCanaryBadge = import.meta.env.VITE_CANARY_BADGE === "true";
 
   return (
     <>
-      {/* Temporary v2 badge for canary testing */}
-      <div
-        style={{
-          position: "fixed",
-          top: "10px",
-          right: "10px",
-          background: "red",
-          color: "white",
-          padding: "5px 10px",
-          borderRadius: "4px",
-          zIndex: 9999,
-        }}
-      >
-        v2
-      </div>
+      {showCanaryBadge && (
+        <div
+          aria-label="Canary version"
+          style={{
+            position: "fixed",
+            top: "10px",
+            right: "10px",
+            background: "red",
+            color: "white",
+            padding: "5px 10px",
+            borderRadius: "4px",
+            zIndex: 9999,
+          }}
+        >
+          v2
+        </div>
+      )}
 
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+
         <Route
           path="/tasks"
           element={
@@ -45,6 +39,7 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+
         <Route path="/" element={<Navigate to="/tasks" replace />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
